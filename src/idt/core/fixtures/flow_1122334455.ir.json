@@ -1,0 +1,38 @@
+{
+  "flowId": "flow_1122334455",
+  "intent": "选择配送方式",
+  "oracle": "prose-case",
+  "description": "选择快递",
+  "initialRoute": "/checkout",
+  "setup": {
+    "notes": []
+  },
+  "unresolved": [],
+  "stages": [
+    {
+      "stageIndex": 0,
+      "stageName": "选择快递",
+      "routePattern": "/checkout",
+      "actions": [
+        {
+          "actionType": "SELECT",
+          "targetRole": "combobox",
+          "targetName": "配送方式",
+          "inputValue": "快递",
+          "timeoutMs": 3000,
+          "triggersRequest": true
+        }
+      ],
+      "invariants": {
+        "network": [
+          {
+            "method": "PUT",
+            "urlPattern": "/api/shipping",
+            "expectedStatus": 204,
+            "responseType": "none"
+          }
+        ]
+      }
+    }
+  ]
+}

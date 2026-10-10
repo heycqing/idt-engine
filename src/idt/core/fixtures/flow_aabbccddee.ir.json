@@ -1,0 +1,84 @@
+{
+  "flowId": "flow_aabbccddee",
+  "intent": "购物车去结算并支付成功",
+  "oracle": "regression-lock",
+  "description": "购物车结算并支付",
+  "initialRoute": "/cart",
+  "setup": {
+    "storageStatePath": "tests/e2e/states/cart-two-items.json",
+    "notes": []
+  },
+  "unresolved": [],
+  "stages": [
+    {
+      "stageIndex": 0,
+      "stageName": "填写并勾选后去结算",
+      "routePattern": "/cart",
+      "actions": [
+        {
+          "actionType": "FILL",
+          "targetRole": "textbox",
+          "targetName": "备注",
+          "inputValue": "尽快送达",
+          "timeoutMs": 5000,
+          "triggersRequest": false
+        },
+        {
+          "actionType": "CHECK",
+          "targetRole": "checkbox",
+          "targetName": "同意协议",
+          "timeoutMs": 5000,
+          "triggersRequest": false
+        },
+        {
+          "actionType": "CLICK",
+          "targetRole": "button",
+          "targetName": "去结算",
+          "timeoutMs": 5000,
+          "triggersRequest": true
+        }
+      ],
+      "invariants": {
+        "network": [],
+        "routeGuard": {
+          "targetUrlPattern": "/checkout$",
+          "readyRole": "heading",
+          "readyName": "结算"
+        }
+      }
+    },
+    {
+      "stageIndex": 1,
+      "stageName": "立即支付",
+      "routePattern": "/checkout",
+      "actions": [
+        {
+          "actionType": "CLICK",
+          "targetRole": "button",
+          "targetName": "立即支付",
+          "timeoutMs": 5000,
+          "triggersRequest": true
+        }
+      ],
+      "invariants": {
+        "network": [
+          {
+            "method": "POST",
+            "urlPattern": "/api/orders",
+            "expectedStatus": 200,
+            "responseType": "json",
+            "assertResponseFields": {
+              "status": "PAID",
+              "data.orderId": 1001
+            }
+          }
+        ],
+        "routeGuard": {
+          "targetUrlPattern": "/checkout/success$",
+          "readyRole": "heading",
+          "readyName": "支付成功"
+        }
+      }
+    }
+  ]
+}
