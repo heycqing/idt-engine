@@ -1,0 +1,23 @@
+{
+  "name": "idt-engine",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "idt": "tsx scripts/idt/cli.ts gen",
+    "idt:emit": "tsx scripts/idt/cli.ts emit",
+    "idt:heal": "tsx scripts/idt/cli.ts heal",
+    "idt:sync": "tsx scripts/idt/cli.ts sync",
+    "test:idt": "tsx scripts/idt/run-unit-tests.ts",
+    "test:e2e": "playwright test --config=playwright.idt.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^22",
+    "commander": "^12",
+    "cross-spawn": "^7.0.6",
+    "ts-morph": "^21",
+    "tsx": "^4.19.0",
+    "typescript": "^5.4.0",
+    "zod": "^3.23.0"
+  }
+}
