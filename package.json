@@ -8,6 +8,7 @@
     "idt:heal": "tsx scripts/idt/cli.ts heal",
     "idt:sync": "tsx scripts/idt/cli.ts sync",
     "test:idt": "tsx scripts/idt/run-unit-tests.ts",
+    "idt:link": "node scripts/idt/link-host.mjs",
     "test:e2e": "playwright test --config=playwright.idt.config.ts"
   },
   "devDependencies": {
