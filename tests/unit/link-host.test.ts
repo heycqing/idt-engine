@@ -9,7 +9,6 @@ import {
   linkHost,
   mergeGitignore,
   renderEnvExample,
-  renderPlaywrightConfig,
   toPosixRelative,
 } from '../../scripts/idt/link-host.mjs';
 
@@ -94,10 +93,9 @@ describe('link-host', () => {
         pkg.scripts['idt:sync'],
         /^node .*node_modules\/tsx\/dist\/cli\.mjs .*scripts\/idt\/cli\.ts sync$/,
       );
-      assert.equal(pkg.scripts['test:e2e'], 'playwright test --config=playwright.idt.config.ts');
-      const playwright = fs.readFileSync(path.join(host, 'playwright.idt.config.ts'), 'utf8');
-      assert.match(playwright, /pnpm dev/);
-      assert.equal(playwright.includes('retries: 0'), true);
+      assert.equal(pkg.scripts['test:e2e'], 'playwright test --config=.idt/playwright.config.ts');
+      // Playwright 配置由 idt:sync 按项目生成，接入脚本不再往宿主根写单租户那份
+      assert.equal(fs.existsSync(path.join(host, 'playwright.idt.config.ts')), false);
       assert.match(fs.readFileSync(path.join(host, '.gitignore'), 'utf8'), /\.idt\//);
     } finally {
       fs.rmSync(host, { recursive: true, force: true });
@@ -134,8 +132,7 @@ describe('link-host', () => {
     }
   });
 
-  it('keeps an existing test:e2e script and uses pnpm start when dev is absent', () => {
-    assert.match(renderPlaywrightConfig('pnpm start'), /'pnpm start'/);
+  it('keeps an existing test:e2e script', () => {
     const host = tempHost();
     const engineRoot = path.resolve('D:\\mine-prop\\idt-engine');
     try {
@@ -153,8 +150,7 @@ describe('link-host', () => {
       });
       const pkg = JSON.parse(fs.readFileSync(path.join(host, 'package.json'), 'utf8'));
       assert.equal(pkg.scripts['test:e2e'], 'vitest e2e');
-      assert.equal(pkg.scripts['test:idt:e2e'], 'playwright test --config=playwright.idt.config.ts');
-      assert.match(fs.readFileSync(path.join(host, 'playwright.idt.config.ts'), 'utf8'), /pnpm start/);
+      assert.equal(pkg.scripts['test:idt:e2e'], 'playwright test --config=.idt/playwright.config.ts');
     } finally {
       fs.rmSync(host, { recursive: true, force: true });
     }
@@ -176,7 +172,7 @@ describe('link-host', () => {
       link();
 
       const pkg = JSON.parse(fs.readFileSync(path.join(host, 'package.json'), 'utf8'));
-      assert.equal(pkg.scripts['test:e2e'], 'playwright test --config=playwright.idt.config.ts');
+      assert.equal(pkg.scripts['test:e2e'], 'playwright test --config=.idt/playwright.config.ts');
       assert.equal(pkg.scripts['test:idt:e2e'], undefined);
     } finally {
       fs.rmSync(host, { recursive: true, force: true });

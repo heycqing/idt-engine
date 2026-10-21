@@ -101,10 +101,11 @@ export async function launchChromiumReplay(
   projectRoot: string,
   storageStatePath: string | undefined,
   run: (page: ReplayPage) => Promise<string>,
+  defaultBaseUrl: string | undefined = 'http://127.0.0.1:3000',
 ): Promise<string> {
   const browser = await chromium.launch({ headless: true });
   try {
-    const baseURL = process.env.IDT_BASE_URL || 'http://127.0.0.1:3000';
+    const baseURL = process.env.IDT_BASE_URL || defaultBaseUrl || 'http://127.0.0.1:3000';
     const contextOptions: { baseURL: string; storageState?: string } = {
       baseURL,
     };

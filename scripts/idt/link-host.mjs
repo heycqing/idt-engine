@@ -21,7 +21,7 @@ const ROUTER_GLOBS = [
 
 const LOCALE_CANDIDATES = ['src/locales/zh-CN.json', 'locales/zh-CN.json'];
 
-const E2E_COMMAND = 'playwright test --config=playwright.idt.config.ts';
+const E2E_COMMAND = 'playwright test --config=.idt/playwright.config.ts';
 const ENV_FILE = '.env.idt.local';
 const ENV_EXAMPLE_FILE = '.env.idt.example';
 
@@ -117,36 +117,6 @@ export function detectRouterGlobs(hostRoot) {
 
 export function renderIdtConfig(pageGlobs, localeFiles, routerGlobs = []) {
   return `export default {\n  pageGlobs: ${JSON.stringify(pageGlobs, null, 2).replace(/\n/g, '\n  ')},\n  localeFiles: ${JSON.stringify(localeFiles)},\n  routerGlobs: ${JSON.stringify(routerGlobs, null, 2).replace(/\n/g, '\n  ')},\n};\n`;
-}
-
-export function renderPlaywrightConfig(localCommand) {
-  return `import { defineConfig, devices } from '@playwright/test';
-
-const port = 3000;
-const baseURL = process.env.IDT_BASE_URL || \`http://127.0.0.1:\${port}\`;
-
-export default defineConfig({
-  testDir: './tests/e2e/generated',
-  timeout: 60_000,
-  fullyParallel: true,
-  forbidOnly: !!process.env.CI,
-  retries: 0,
-  workers: process.env.CI ? 2 : undefined,
-  reporter: process.env.CI ? [['html'], ['github']] : 'list',
-  use: {
-    baseURL,
-    trace: 'retain-on-failure',
-    screenshot: 'only-on-failure',
-  },
-  projects: [{ name: 'Desktop Chrome', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
-    command: process.env.CI ? 'pnpm start' : '${localCommand}',
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
-});
-`;
 }
 
 export function renderEnvExample() {
@@ -322,17 +292,8 @@ export function linkHost(options) {
     notes.push('保留已有 idt.config.ts');
   }
 
-  const playwrightPath = path.join(hostRoot, 'playwright.idt.config.ts');
-  let playwrightWritten = false;
-  if (!fs.existsSync(playwrightPath)) {
-    const localCommand = pkg.scripts?.dev ? 'pnpm dev' : pkg.scripts?.start ? 'pnpm start' : 'pnpm dev';
-    fs.writeFileSync(playwrightPath, renderPlaywrightConfig(localCommand), 'utf8');
-    playwrightWritten = true;
-    if (!pkg.scripts?.dev && !pkg.scripts?.start) {
-      notes.push('宿主没有 dev 或 start 脚本。--yes、test:e2e、idt:heal 在补上启动命令之前不要跑。');
-    }
-  } else {
-    notes.push('保留已有 playwright.idt.config.ts');
+  if (!pkg.scripts?.dev && !pkg.scripts?.start) {
+    notes.push('宿主没有 dev 或 start 脚本。idt:sync 生成的 Playwright 配置会缺 webServer，--yes、test:e2e、idt:heal 在补上启动命令之前不要跑。');
   }
 
   const envExamplePath = path.join(hostRoot, ENV_EXAMPLE_FILE);
@@ -387,7 +348,6 @@ export function linkHost(options) {
     hostRoot,
     enginePosix,
     configWritten,
-    playwrightWritten,
     envExampleWritten,
     gitignoreAdded: merged.added,
     missing,

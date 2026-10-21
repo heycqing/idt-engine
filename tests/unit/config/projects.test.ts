@@ -201,4 +201,42 @@ describe('idt projects', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+  it('reads the dev command and port from the marker', () => {
+    const root = tempRoot();
+    try {
+      mark(root, 'apps/caida', { project: 'caida', devCommand: 'pnpm dev:cd', port: 8080 });
+      const [project] = resolveProjects(root, { pageGlobs: [], routerGlobs: [], localeFiles: [] });
+      assert.equal(project.devCommand, 'pnpm dev:cd');
+      assert.equal(project.port, 8080);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('derives a dev command from the package name when the marker omits one', () => {
+    const root = tempRoot();
+    try {
+      write(
+        root,
+        'apps/caida/package.json',
+        JSON.stringify({ name: '@trade/caida', scripts: { dev: 'vue-cli-service serve' }, idt: {} }),
+      );
+      const [project] = resolveProjects(root, { pageGlobs: [], routerGlobs: [], localeFiles: [] });
+      assert.equal(project.devCommand, 'pnpm --filter @trade/caida dev');
+      assert.equal(project.port, 3000);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves the dev command undefined when the package has no dev script', () => {
+    const root = tempRoot();
+    try {
+      write(root, 'apps/caida/package.json', JSON.stringify({ name: '@trade/caida', idt: {} }));
+      const [project] = resolveProjects(root, { pageGlobs: [], routerGlobs: [], localeFiles: [] });
+      assert.equal(project.devCommand, undefined);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

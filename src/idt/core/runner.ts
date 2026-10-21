@@ -62,21 +62,56 @@ export function runCommand(
   });
 }
 
-export function playwrightTestInvocation(specPath: string): {
+const GENERATED_CONFIG = '.idt/playwright.config.ts';
+const LEGACY_CONFIG = 'playwright.idt.config.ts';
+
+/**
+ * 优先用 idt:sync 生成的按项目配置；宿主还停在老形态时回落到根上那份。
+ */
+export function playwrightConfigPath(projectRoot?: string): string {
+  if (projectRoot) {
+    const generated = path.resolve(projectRoot, ...GENERATED_CONFIG.split('/'));
+    if (fs.existsSync(generated)) return GENERATED_CONFIG;
+  }
+  return LEGACY_CONFIG;
+}
+
+/**
+ * 从 projectRoot 向上找 node_modules/playwright/cli.js。直接用 node 跑它，
+ * 不经过 pnpm exec —— 包管理器本身出问题时不该把测试一起拖下水，
+ * Windows 上也绕开了 .cmd/.ps1 shim。
+ */
+export function playwrightCliEntry(projectRoot: string): string | null {
+  let current = path.resolve(projectRoot);
+  for (;;) {
+    const candidate = path.join(current, 'node_modules', 'playwright', 'cli.js');
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+export function playwrightTestInvocation(
+  specPath: string,
+  projectRoot?: string,
+): {
   command: string;
   args: string[];
 } {
-  return {
-    command: 'pnpm',
-    args: [
-      'exec',
-      'playwright',
-      'test',
-      specPath,
-      '--config=playwright.idt.config.ts',
-      '--reporter=json',
-    ],
-  };
+  const tail = [
+    'test',
+    specPath,
+    `--config=${playwrightConfigPath(projectRoot)}`,
+    '--reporter=json',
+  ];
+
+  const cli = projectRoot ? playwrightCliEntry(projectRoot) : null;
+  if (cli) {
+    return { command: process.execPath, args: [cli, ...tail] };
+  }
+
+  return { command: 'pnpm', args: ['exec', 'playwright', ...tail] };
 }
 
 export async function runPlaywrightSpec(
@@ -89,7 +124,7 @@ export async function runPlaywrightSpec(
     fs.mkdirSync(idtDir, { recursive: true });
   }
 
-  const invocation = playwrightTestInvocation(specPath);
+  const invocation = playwrightTestInvocation(specPath, projectRoot);
   const spawnEnv: NodeJS.ProcessEnv = {
     ...process.env,
     FORCE_COLOR: '0',

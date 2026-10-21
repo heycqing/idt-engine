@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   runCommand,
+  playwrightCliEntry,
   playwrightTestInvocation,
   runPlaywrightSpec,
   RunnerError,
@@ -35,7 +36,7 @@ describe('runner', () => {
     assert.equal(result.stdout.trim(), '0');
   });
 
-  it('playwrightTestInvocation returns pnpm invocation without npm in args', () => {
+  it('playwrightTestInvocation falls back to the legacy root config', () => {
     const invocation = playwrightTestInvocation('tests/e2e/test.spec.ts');
     assert.equal(invocation.command, 'pnpm');
     assert.deepEqual(invocation.args, [
@@ -47,6 +48,22 @@ describe('runner', () => {
       '--reporter=json',
     ]);
     assert.ok(!invocation.args.includes('npm'));
+  });
+
+  it('playwrightTestInvocation prefers the generated per-project config', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'idt-runner-cfg-'));
+    try {
+      fs.mkdirSync(path.join(tempDir, '.idt'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, '.idt', 'playwright.config.ts'), '// generated', 'utf8');
+
+      const invocation = playwrightTestInvocation('tests/e2e/test.spec.ts', tempDir);
+      assert.ok(
+        invocation.args.includes('--config=.idt/playwright.config.ts'),
+        `expected the generated config, got ${invocation.args.join(' ')}`,
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it('runPlaywrightSpec passes expected parameters to injected spawnImpl', async () => {
@@ -134,6 +151,50 @@ describe('runner', () => {
           return true;
         },
       );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+  it('runs the resolved playwright cli directly instead of going through pnpm', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'idt-runner-cli-'));
+    try {
+      const cliDir = path.join(tempDir, 'node_modules', 'playwright');
+      fs.mkdirSync(cliDir, { recursive: true });
+      const cliJs = path.join(cliDir, 'cli.js');
+      fs.writeFileSync(cliJs, '// fake', 'utf8');
+
+      assert.equal(playwrightCliEntry(tempDir), cliJs);
+
+      const invocation = playwrightTestInvocation('tests/e2e/a.spec.ts', tempDir);
+      assert.equal(invocation.command, process.execPath);
+      assert.equal(invocation.args[0], cliJs);
+      assert.equal(invocation.args[1], 'test');
+      assert.ok(!invocation.args.includes('pnpm'));
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('finds the playwright cli hoisted above the project root', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'idt-runner-up-'));
+    try {
+      const cliDir = path.join(tempDir, 'node_modules', 'playwright');
+      fs.mkdirSync(cliDir, { recursive: true });
+      fs.writeFileSync(path.join(cliDir, 'cli.js'), '// fake', 'utf8');
+      const nested = path.join(tempDir, 'apps', 'caida');
+      fs.mkdirSync(nested, { recursive: true });
+
+      assert.equal(playwrightCliEntry(nested), path.join(cliDir, 'cli.js'));
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to pnpm exec when playwright cannot be resolved', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'idt-runner-none-'));
+    try {
+      assert.equal(playwrightCliEntry(tempDir), null);
+      assert.equal(playwrightTestInvocation('a.spec.ts', tempDir).command, 'pnpm');
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

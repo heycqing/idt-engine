@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { Command } from 'commander';
 import { loadIdtConfig } from '../../src/idt/config/load.js';
 import {
@@ -13,10 +14,16 @@ import {
   type IdtProject,
 } from '../../src/idt/config/projects.js';
 import { extractProjectTopology } from '../../src/idt/extract/topology.js';
+import {
+  PROJECT_PLAYWRIGHT_CONFIG,
+  projectBaseUrl,
+  writeProjectPlaywrightConfig,
+} from '../../src/idt/core/playwright-config.js';
 import { generateFlow } from '../../src/idt/core/generate.js';
 import { OpenAiClient } from '../../src/idt/core/openai-client.js';
 import { emitIrFile } from '../../src/idt/core/emitter.js';
 import { heal } from '../../src/idt/core/healer.js';
+import { playwrightCliEntry } from '../../src/idt/core/runner.js';
 
 const program = new Command();
 
@@ -53,6 +60,7 @@ function extractOptions(project: IdtProject) {
 
 function syncOne(project: IdtProject): void {
   extractProjectTopology(project.root, extractOptions(project));
+  writeProjectPlaywrightConfig(project);
 }
 
 program
@@ -67,7 +75,9 @@ program
       for (const project of targets) {
         syncOne(project);
         const label = project.implicit ? '' : `[${project.name}] `;
-        console.log(`${label}Successfully generated .idt/topology.json and .idt/semantic-index.json`);
+        console.log(
+          `${label}Successfully generated .idt/topology.json, .idt/semantic-index.json and .idt/playwright.config.ts`,
+        );
       }
       process.exit(0);
     } catch (err: any) {
@@ -159,6 +169,7 @@ program
       const result = await heal({
         projectRoot: project.root,
         specPath: path.resolve(process.cwd(), spec),
+        baseUrl: projectBaseUrl(project),
       });
 
       if (result.exitCode === 0) {
@@ -182,6 +193,53 @@ program
   });
 
 program
+  .command('test [args...]')
+  .description('Run the generated Playwright specs of one IDT project')
+  .option('--project <name>', 'IDT project to test')
+  .allowUnknownOption(true)
+  .action((args: string[], options: { project?: string }) => {
+    try {
+      const { projects } = workspace();
+      const project = pick(projects, options.project);
+
+      const configPath = path.join(project.root, '.idt', PROJECT_PLAYWRIGHT_CONFIG);
+      if (!fs.existsSync(configPath)) {
+        console.error(
+          `${project.name} 还没有 Playwright 配置，先执行 idt:sync 生成 .idt/${PROJECT_PLAYWRIGHT_CONFIG}`,
+        );
+        process.exit(2);
+      }
+
+      // 不以 - 开头的才是 spec 路径，其余原样透传给 Playwright
+      const specs = args
+        .filter((arg) => !arg.startsWith('-'))
+        .map((arg) => path.resolve(process.cwd(), arg));
+      const passthrough = args.filter((arg) => arg.startsWith('-'));
+      const tail = [
+        'test',
+        ...specs,
+        `--config=.idt/${PROJECT_PLAYWRIGHT_CONFIG}`,
+        ...passthrough,
+      ];
+
+      const cli = playwrightCliEntry(project.root);
+      if (!cli) {
+        console.error('找不到 playwright，请先在宿主安装 @playwright/test');
+        process.exit(2);
+      }
+
+      if (!project.implicit) console.log(`项目 ${project.name}`);
+      const result = spawnSync(process.execPath, [cli, ...tail], {
+        cwd: project.root,
+        stdio: 'inherit',
+      });
+      process.exit(result.status ?? 1);
+    } catch (err: any) {
+      fail(err);
+    }
+  });
+
+program
   .command('projects')
   .description('List the IDT projects discovered in this workspace')
   .action(() => {
@@ -194,6 +252,8 @@ program
         console.log(`  ${project.name}  ${where}  ${tag}`);
         console.log(`      pageGlobs   ${project.pageGlobs.join(', ') || '（空）'}`);
         console.log(`      routerGlobs ${project.routerGlobs.join(', ') || '（空）'}`);
+        console.log(`      baseURL     ${projectBaseUrl(project)}`);
+        console.log(`      devCommand  ${project.devCommand ?? '（无，生成的配置不带 webServer）'}`);
       }
       process.exit(0);
     } catch (err: any) {

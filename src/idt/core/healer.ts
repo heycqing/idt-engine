@@ -183,6 +183,8 @@ export function locateHealTarget(
 export interface HealOptions {
   projectRoot: string;
   specPath: string;
+  /** 项目的开发服务器地址。不给就沿用 replay 的默认值。 */
+  baseUrl?: string;
   runSpec?: (
     specPath: string,
   ) => Promise<{ exitCode: number; report: unknown }>;
@@ -285,6 +287,7 @@ export async function heal(options: HealOptions): Promise<HealResult> {
         options.projectRoot,
         currentIr.setup?.storageStatePath,
         (page) => replayUntil(currentIr, healTarget, page),
+        options.baseUrl,
       );
     });
 

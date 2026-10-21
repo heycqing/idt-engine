@@ -11,7 +11,6 @@ export interface LinkHostOptions {
 
 export interface LinkHostResult {
   configWritten: boolean;
-  playwrightWritten: boolean;
   envExampleWritten: boolean;
   gitignoreAdded: string[];
   installCode: number;
@@ -30,5 +29,4 @@ export function desiredScripts(enginePosix: string, tsxRuntimePosix?: string): R
 export function linkHost(options: LinkHostOptions): LinkHostResult;
 export function mergeGitignore(existing?: string): { text: string; added: string[] };
 export function renderEnvExample(): string;
-export function renderPlaywrightConfig(localCommand: string): string;
 export function toPosixRelative(fromDir: string, toDir: string): string;

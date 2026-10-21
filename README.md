@@ -58,12 +58,24 @@ routerGlobs: [
 
 `idt.config.ts` 用 `projectGlobs` 指定去哪些目录找标志，默认 `['apps/*', 'packages/*']`。配置和 `.env.idt.local` 全仓只有一份，留在 IDT 根目录——标志不是 `idt.config.ts`，所以向上查找会越过被标记的目录走到根上。
 
-每个项目的拓扑、语义索引和生成的 spec 落在各自的项目根下，互不干扰：
+标志里还可以写开发服务器信息，Playwright 配置按这两项生成：
+
+```json
+{ "idt": { "project": "caida", "devCommand": "pnpm dev:cd", "port": 8080 } }
+```
+
+`devCommand` 不写就按包名推 `pnpm --filter <name> dev`，包里没有 dev 脚本就不生成 `webServer`；`port` 不写按 3000。`IDT_BASE_URL` 和 `IDT_PORT` 仍可临时覆盖。
+
+每个项目的拓扑、语义索引、Playwright 配置和生成的 spec 落在各自的项目根下，互不干扰：
 
 ```
-apps/caida/.idt/topology.json      apps/caida/tests/e2e/generated/
-apps/yuekai/.idt/topology.json     apps/yuekai/tests/e2e/generated/
+apps/caida/.idt/topology.json      apps/caida/.idt/playwright.config.ts
+apps/caida/tests/e2e/generated/
+
+apps/yuekai/.idt/...
 ```
+
+`.idt/playwright.config.ts` 由 `idt:sync` 生成，`testDir` 指向该项目的 `tests/e2e`，生成的 spec 和手写的 fixture、冒烟用例都在内。改它没有意义，下次 sync 会覆盖；要调端口或启动命令改标志。
 
 命令按这个顺序确定作用于哪个项目：显式 `--project <name>` → 当前工作目录所在的项目 → 只有一个项目时取它 → 否则报错并列出可选项。`pnpm idt:sync` 不带选择器时同步全部项目。
 
@@ -78,6 +90,6 @@ apps/yuekai/.idt/topology.json     apps/yuekai/tests/e2e/generated/
 - 从 IR 写出 spec：`pnpm idt:emit <ir路径>`（不需要安装 Playwright）
 - 自愈失败 spec：`pnpm idt:heal <spec路径>`
 - 同步拓扑与语义索引：`pnpm idt:sync`（多项目宿主默认同步全部，`--project <name>` 只同步一个）
+- 运行某个项目的端到端测试：`pnpm idt test [spec...] [--project <name>] [playwright 参数]`
 - 列出发现到的 IDT 项目：`pnpm idt projects`
-- 运行端到端测试：`pnpm test:e2e`
 - 运行单元测试套件：`pnpm test:idt`（单测在 `tests/unit/`，不访问网络，也不启动浏览器）

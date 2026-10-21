@@ -37,9 +37,21 @@ export interface IdtProject {
   pageGlobs: string[];
   routerGlobs: string[];
   localeFiles: string[];
+  /** 起开发服务器的命令。标志没写就从包名推，包里没有 dev 脚本就没有。 */
+  devCommand?: string;
+  /** 开发服务器端口，标志没写按 3000。 */
+  port: number;
 }
 
-function readMarker(pkgPath: string): Record<string, unknown> | null {
+export const DEFAULT_PROJECT_PORT = 3000;
+
+interface MarkedPackage {
+  marker: Record<string, unknown>;
+  packageName: string | null;
+  hasDevScript: boolean;
+}
+
+function readMarker(pkgPath: string): MarkedPackage | null {
   let raw: unknown;
   try {
     raw = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
@@ -47,9 +59,28 @@ function readMarker(pkgPath: string): Record<string, unknown> | null {
     return null;
   }
   if (!raw || typeof raw !== 'object') return null;
-  const marker = (raw as Record<string, unknown>).idt;
+  const pkg = raw as Record<string, unknown>;
+  const marker = pkg.idt;
   if (!marker || typeof marker !== 'object' || Array.isArray(marker)) return null;
-  return marker as Record<string, unknown>;
+
+  const scripts = pkg.scripts;
+  return {
+    marker: marker as Record<string, unknown>,
+    packageName: typeof pkg.name === 'string' ? pkg.name : null,
+    hasDevScript:
+      !!scripts &&
+      typeof scripts === 'object' &&
+      typeof (scripts as Record<string, unknown>).dev === 'string',
+  };
+}
+
+function devCommandOf(found: MarkedPackage): string | undefined {
+  const declared = found.marker.devCommand;
+  if (typeof declared === 'string' && declared.trim().length > 0) return declared.trim();
+  if (found.hasDevScript && found.packageName) {
+    return `pnpm --filter ${found.packageName} dev`;
+  }
+  return undefined;
 }
 
 function stringArray(value: unknown): string[] | null {
@@ -89,11 +120,13 @@ export function resolveProjects(idtRoot: string, config: IdtConfig): IdtProject[
   for (const glob of globs) {
     for (const dir of expandProjectGlob(root, glob)) {
       if (seen.has(dir)) continue;
-      const marker = readMarker(path.join(dir, 'package.json'));
-      if (!marker) continue;
+      const found = readMarker(path.join(dir, 'package.json'));
+      if (!found) continue;
       seen.add(dir);
 
+      const { marker } = found;
       const declaredName = marker.project;
+      const declaredPort = marker.port;
       projects.push({
         name:
           typeof declaredName === 'string' && declaredName.trim().length > 0
@@ -106,6 +139,11 @@ export function resolveProjects(idtRoot: string, config: IdtConfig): IdtProject[
         localeFiles:
           stringArray(marker.localeFiles) ??
           LOCALE_CANDIDATES.filter((rel) => fs.existsSync(path.join(dir, ...rel.split('/')))),
+        devCommand: devCommandOf(found),
+        port:
+          typeof declaredPort === 'number' && Number.isInteger(declaredPort)
+            ? declaredPort
+            : DEFAULT_PROJECT_PORT,
       });
     }
   }
@@ -123,6 +161,12 @@ export function resolveProjects(idtRoot: string, config: IdtConfig): IdtProject[
       pageGlobs: config.pageGlobs,
       routerGlobs: config.routerGlobs,
       localeFiles: config.localeFiles,
+      devCommand: devCommandOf(readMarker(path.join(root, 'package.json')) ?? {
+        marker: {},
+        packageName: null,
+        hasDevScript: false,
+      }),
+      port: DEFAULT_PROJECT_PORT,
     },
   ];
 }
