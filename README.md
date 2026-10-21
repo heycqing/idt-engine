@@ -83,6 +83,18 @@ apps/yuekai/.idt/...
 
 一个标志都没有时退化为单项目，项目根就是 IDT 根目录，产物路径和行为与引入本机制之前完全一致。
 
+## Hash 路由
+
+`idt:sync` 会从 `routerGlobs` 命中的文件里识别路由模式：认 `new VueRouter({ mode })`，也认 `createRouter({ history: createWebHashHistory() })`。识别结果写进拓扑顶层的 `router` 字段，`goto` 和 `waitForURL` 据此装配。
+
+`mode` 写成变量或三元就不猜，`base` 只认字符串字面量——运行期才有值的写法（比如 `base: window.webConfig.BASE_URL`）解析不了。这两种情况在标志里写死：
+
+```json
+{ "idt": { "project": "caida", "routerMode": "hash", "routerBase": "/trade/" } }
+```
+
+IR 本身只存应用路由，不带 `#`。同一条 IR 在宿主从 hash 换成 history 之后仍然成立。
+
 ## 可用命令
 
 - 把引擎接到宿主：`pnpm idt:link -- --host <宿主根目录>`
