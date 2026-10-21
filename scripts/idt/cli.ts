@@ -210,10 +210,17 @@ program
         process.exit(2);
       }
 
-      // 不以 - 开头的才是 spec 路径，其余原样透传给 Playwright
+      // 不以 - 开头的才是 spec 路径，其余原样透传给 Playwright。
+      // Playwright 把位置参数当正则匹配文件路径，Windows 绝对路径里的 \ 和 :
+      // 不是合法正则，所以统一换成相对项目根的 posix 路径。
       const specs = args
         .filter((arg) => !arg.startsWith('-'))
-        .map((arg) => path.resolve(process.cwd(), arg));
+        .map((arg) =>
+          path
+            .relative(project.root, path.resolve(process.cwd(), arg))
+            .split(path.sep)
+            .join('/'),
+        );
       const passthrough = args.filter((arg) => arg.startsWith('-'));
       const tail = [
         'test',
