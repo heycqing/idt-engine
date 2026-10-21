@@ -11,6 +11,7 @@ import {
   ProjectTopologySchema,
   SemanticIndexSchema,
 } from '../schemas/topology.schema.js';
+import { DEFAULT_IDT_CONFIG, loadIdtConfig } from '../config/load.js';
 
 function createTempDir(prefix = 'idt-test-'): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -31,6 +32,26 @@ function writeFile(dir: string, relPath: string, content: string): void {
 }
 
 describe('topology extraction and semantic index', () => {
+  it('loads router globs and defaults them to an empty list', () => {
+    const tmp = createTempDir();
+    try {
+      writeFile(
+        tmp,
+        'idt.config.ts',
+        `export default {
+          pageGlobs: ['src/views/**/*.vue'],
+          localeFiles: [],
+          routerGlobs: ['src/router/**/*.{js,ts}'],
+        };`,
+      );
+
+      assert.deepEqual(loadIdtConfig(tmp).routerGlobs, ['src/router/**/*.{js,ts}']);
+      assert.deepEqual(DEFAULT_IDT_CONFIG.routerGlobs, []);
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
   it('Requirement 2: Three-page fixture, sourceDigest consistency, and schema validation', () => {
     const tmp = createTempDir();
     try {
@@ -487,6 +508,229 @@ ${paddingLines}
       assert.equal(res.status, 2, `Expected exit code 2 but got ${res.status}: ${res.stdout} ${res.stderr}`);
     } finally {
       removeTempDir(tmpInvalid);
+    }
+  });
+
+  it('reads Vue single-file pages by file path and literal jumps', () => {
+    const tmp = createTempDir();
+    const logs: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      logs.push(args.map((arg) => String(arg)).join(' '));
+    };
+    try {
+      writeFile(
+        tmp,
+        'src/locales/zh-CN.json',
+        JSON.stringify({ trade: { buy: '买入' } }),
+      );
+      writeFile(
+        tmp,
+        'src/views/transfer/today/index.vue',
+        `
+        <template>
+          <div class="history flex">
+            <router-link to="/statement/history">历史成交</router-link>
+            <router-link :to="{ path: '/subscribe/lucky' }">中签</router-link>
+            <button @click="goCart">去结算</button>
+            <span>{{ $t('trade.buy') }}</span>
+            <!-- <router-link to="/subscribe/plan">计划</router-link> -->
+          </div>
+        </template>
+        <script>
+        export default {
+          methods: {
+            goCart() {
+              this.$router.push('/cart')
+            },
+            goHome() {
+              this.$router.replace({ path: '/credit/home', query })
+            },
+            goDynamic() {
+              const content = '/nope'
+              this.$router.push(content)
+            }
+          }
+        }
+        </script>
+        `,
+      );
+      writeFile(
+        tmp,
+        'src/views/cart/index.vue',
+        `
+        <template>
+          <button @click="goCheckout">去下单</button>
+        </template>
+        <script setup>
+        function goCheckout() {
+          router.push('/checkout')
+        }
+        </script>
+        `,
+      );
+      writeFile(
+        tmp,
+        'src/views/docs/[...slug].vue',
+        `<template><div>文档</div></template>`,
+      );
+
+      const topo = extractProjectTopology(tmp);
+      assert.equal(topo.routes['/transfer/today'].filePath, 'src/views/transfer/today/index.vue');
+      const jumps = new Map(topo.routes['/transfer/today'].transitions.map((item) => [item.targetRoute, item]));
+      assert.equal(jumps.size, 4);
+      assert.equal(jumps.get('/statement/history')?.triggerType, 'CLICK');
+      assert.equal(jumps.get('/statement/history')?.triggerElementText, '历史成交');
+      assert.equal(jumps.get('/subscribe/lucky')?.triggerElementText, '中签');
+      assert.equal(jumps.get('/cart')?.triggerType, 'CLICK');
+      assert.equal(jumps.get('/cart')?.triggerElementText, '去结算');
+      assert.match(jumps.get('/cart')?.codeSlice ?? '', /\$router\.push/);
+      assert.equal(jumps.get('/credit/home')?.triggerType, 'PROGRAMMATIC');
+      assert.equal(jumps.has('/subscribe/plan'), false);
+      assert.equal(jumps.has('/nope'), false);
+
+      const keywords = topo.routes['/transfer/today'].semanticKeywords;
+      assert.ok(keywords.includes('历史成交'));
+      assert.ok(keywords.includes('买入'));
+      assert.equal(keywords.includes('history flex'), false);
+      assert.equal(keywords.includes('计划'), false);
+
+      const cart = topo.routes['/cart'];
+      assert.equal(cart.transitions.length, 1);
+      assert.equal(cart.transitions[0].targetRoute, '/checkout');
+      assert.equal(cart.transitions[0].triggerType, 'CLICK');
+      assert.equal(cart.transitions[0].triggerElementText, '去下单');
+      assert.equal(topo.routes['/docs/[...slug]'], undefined);
+      assert.ok(logs.some((line) => line.includes('catch-all')));
+
+      const index = JSON.parse(fs.readFileSync(path.join(tmp, '.idt', 'semantic-index.json'), 'utf8'));
+      const parsed = SemanticIndexSchema.parse(index);
+      const buy = parsed.entries.find((entry) => entry.keyword === '买入');
+      assert.equal(buy?.kind, 'i18n');
+      assert.equal(buy?.route, '/transfer/today');
+    } finally {
+      console.log = originalLog;
+      removeTempDir(tmp);
+    }
+  });
+
+  it('uses Vue Router paths while preserving page semantics and transitions', () => {
+    const tmp = createTempDir();
+    const logs: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => logs.push(args.map(String).join(' '));
+    try {
+      writeFile(
+        tmp,
+        'idt.config.ts',
+        `export default {
+          pageGlobs: ['src/views/**/*.vue'],
+          routerGlobs: ['src/router/**/*.js'],
+          localeFiles: [],
+        };`,
+      );
+      writeFile(
+        tmp,
+        'src/views/subscribe/index.vue',
+        `
+        <template>
+          <button @click="goMine">新股申购</button>
+        </template>
+        <script>
+        export default {
+          methods: {
+            goMine() { this.$router.push('/subscribe/my') }
+          }
+        }
+        </script>
+        `,
+      );
+      writeFile(
+        tmp,
+        'src/router/index.js',
+        `
+        const Subscribe = wrapper(() => import('@/views/subscribe'))
+        export default [
+          { path: '/subscribe/home', component: Subscribe },
+          { path: '/subscribe/landing', component: Subscribe },
+        ]
+        `,
+      );
+
+      const topo = extractProjectTopology(tmp);
+
+      assert.equal(topo.routes['/subscribe/home'].filePath, 'src/views/subscribe/index.vue');
+      assert.equal(topo.routes['/subscribe'], undefined);
+      assert.ok(topo.routes['/subscribe/home'].semanticKeywords.includes('新股申购'));
+      assert.equal(topo.routes['/subscribe/home'].transitions[0].targetRoute, '/subscribe/my');
+      assert.equal(topo.routes['/subscribe/landing'].filePath, 'src/views/subscribe/index.vue');
+      assert.ok(topo.routes['/subscribe/landing'].semanticKeywords.includes('新股申购'));
+      assert.ok(logs.includes('[IDT] Vue Router: records=2 mapped=2 unresolved=0'));
+
+      const semanticIndex = JSON.parse(
+        fs.readFileSync(path.join(tmp, '.idt', 'semantic-index.json'), 'utf8'),
+      );
+      assert.ok(
+        semanticIndex.entries.some(
+          (entry: { keyword: string; route: string }) =>
+            entry.keyword === '新股申购' && entry.route === '/subscribe/landing',
+        ),
+      );
+
+      writeFile(
+        tmp,
+        'src/router/index.js',
+        `
+        const Subscribe = wrapper(() => import('@/views/subscribe'))
+        export default [{ path: '/subscribe/start', component: Subscribe }]
+        `,
+      );
+      const updated = extractProjectTopology(tmp);
+      assert.notEqual(updated.sourceDigest, topo.sourceDigest);
+      assert.equal(updated.routes['/subscribe/start'].filePath, 'src/views/subscribe/index.vue');
+    } finally {
+      console.log = originalLog;
+      removeTempDir(tmp);
+    }
+  });
+
+  it('keeps the first page when Vue Router maps two components to the same route', () => {
+    const tmp = createTempDir();
+    const logs: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => logs.push(args.map(String).join(' '));
+    try {
+      writeFile(
+        tmp,
+        'idt.config.ts',
+        `export default {
+          pageGlobs: ['src/views/**/*.vue'],
+          routerGlobs: ['src/router/**/*.js'],
+          localeFiles: [],
+        };`,
+      );
+      writeFile(tmp, 'src/views/a/index.vue', '<template><div>页面甲</div></template>');
+      writeFile(tmp, 'src/views/b/index.vue', '<template><div>页面乙</div></template>');
+      writeFile(
+        tmp,
+        'src/router/index.js',
+        `
+        const A = () => import('@/views/a')
+        const B = () => import('@/views/b')
+        export default [
+          { path: '/same', component: A },
+          { path: '/same', component: B },
+        ]
+        `,
+      );
+
+      const topo = extractProjectTopology(tmp);
+
+      assert.equal(topo.routes['/same'].filePath, 'src/views/a/index.vue');
+      assert.ok(logs.some((line) => line.includes('duplicate route /same')));
+    } finally {
+      console.log = originalLog;
+      removeTempDir(tmp);
     }
   });
 });

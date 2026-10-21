@@ -7,11 +7,12 @@ import { IdtConfigSchema, type IdtConfig } from '../schemas/config.schema.js';
 
 export const DEFAULT_IDT_CONFIG: IdtConfig = {
   pageGlobs: [
-    'src/pages/**/*.{tsx,jsx,ts,js}',
+    'src/pages/**/*.{tsx,jsx,ts,js,vue}',
     'src/app/**/page.{tsx,jsx}',
-    'src/views/**/*.{tsx,jsx,ts,js}',
+    'src/views/**/*.{tsx,jsx,ts,js,vue}',
   ],
   localeFiles: ['src/locales/zh-CN.json', 'locales/zh-CN.json'],
+  routerGlobs: [],
 };
 
 export class IdtConfigError extends Error {

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Project, Node, SyntaxKind } from 'ts-morph';
+import { Project, Node, SyntaxKind, type SourceFile } from 'ts-morph';
 import { loadIdtConfig } from '../config/load.js';
 import {
   toPosixPath,
@@ -18,6 +18,14 @@ import {
   type SemanticIndex,
   type SemanticIndexEntry,
 } from '../schemas/topology.schema.js';
+import {
+  extractVueSfc,
+  listVueFiles,
+  scanVueTemplate,
+  stripVueFromGlob,
+  type VueTemplateScan,
+} from './vue-sfc.js';
+import { extractVueRouterMappings } from './vue-router.js';
 
 function isFunctionNode(node: Node): boolean {
   return (
@@ -81,6 +89,16 @@ function extractTargetRoute(node: Node): string | null {
       return extractTargetRoute(expr);
     }
   }
+  if (Node.isObjectLiteralExpression(node)) {
+    const pathProp = node.getProperty('path');
+    if (!pathProp || !Node.isPropertyAssignment(pathProp)) return null;
+    const init = pathProp.getInitializer();
+    if (!init) return null;
+    if (Node.isStringLiteral(init) || Node.isNoSubstitutionTemplateLiteral(init)) {
+      return init.getLiteralValue();
+    }
+    return null;
+  }
   return null;
 }
 
@@ -99,6 +117,31 @@ function truncateCodeSlice(sliceText: string): string {
   return normalized;
 }
 
+function loadVuePages(project: Project, projectRoot: string, globs: string[]) {
+  const pages: Array<{
+    sf: SourceFile;
+    absPath: string;
+    relPosix: string;
+    vue: VueTemplateScan;
+  }> = [];
+  for (const relPosix of listVueFiles(projectRoot, globs)) {
+    const absPath = path.resolve(projectRoot, ...relPosix.split('/'));
+    const raw = fs.readFileSync(absPath, 'utf8');
+    const sfc = extractVueSfc(raw);
+    const scan = scanVueTemplate(sfc.template);
+    const virtualPath = path.resolve(projectRoot, '.idt-virtual', `${relPosix}.ts`);
+    const script = sfc.script.trim() ? sfc.script : 'export {}\n';
+    let sf: SourceFile;
+    try {
+      sf = project.createSourceFile(virtualPath, script, { overwrite: true });
+    } catch {
+      sf = project.createSourceFile(virtualPath, 'export {}\n', { overwrite: true });
+    }
+    pages.push({ sf, absPath, relPosix, vue: scan });
+  }
+  return pages;
+}
+
 export function extractProjectTopology(projectRoot: string): ProjectTopology {
   const config = loadIdtConfig(projectRoot);
 
@@ -110,22 +153,38 @@ export function extractProjectTopology(projectRoot: string): ProjectTopology {
   });
 
   const posixRoot = toPosixPath(path.resolve(projectRoot));
-  const patterns = config.pageGlobs.map((glob) => {
+  const patterns = config.pageGlobs.flatMap((glob) => {
     const cleanGlob = toPosixPath(glob).replace(/^\.\//, '');
-    return `${posixRoot}/${cleanGlob}`;
+    const morphGlob = stripVueFromGlob(cleanGlob);
+    return morphGlob ? [`${posixRoot}/${morphGlob}`] : [];
   });
+  if (patterns.length > 0) project.addSourceFilesAtPaths(patterns);
 
-  project.addSourceFilesAtPaths(patterns);
-
-  const sourceFiles = project.getSourceFiles();
-
-  // Sort files by relative POSIX path in ascending order
-  const fileItems = sourceFiles.map((sf) => {
+  const vuePages = loadVuePages(project, projectRoot, config.pageGlobs);
+  const fileItems: Array<{
+    sf: SourceFile;
+    absPath: string;
+    relPosix: string;
+    vue: VueTemplateScan | null;
+  }> = [];
+  for (const sf of project.getSourceFiles()) {
     const absPath = sf.getFilePath();
     const relPosix = toPosixPath(path.relative(projectRoot, absPath));
-    return { sf, absPath, relPosix };
-  });
+    if (!relPosix || relPosix.startsWith('..') || relPosix.startsWith('.idt-virtual/') || relPosix.endsWith('.vue')) {
+      continue;
+    }
+    fileItems.push({ sf, absPath, relPosix, vue: null });
+  }
+  fileItems.push(...vuePages);
   fileItems.sort((a, b) => a.relPosix.localeCompare(b.relPosix));
+  const routerMappings = extractVueRouterMappings(projectRoot, config.routerGlobs);
+  if (config.routerGlobs.length > 0) {
+    console.log(
+      `[IDT] Vue Router: records=${routerMappings.routeRecordCount} `
+      + `mapped=${routerMappings.mappedRouteCount} `
+      + `unresolved=${routerMappings.unresolvedComponents.length}`,
+    );
+  }
 
   // Compute sourceDigest
   const fileHexes: string[] = [];
@@ -135,6 +194,24 @@ export function extractProjectTopology(projectRoot: string): ProjectTopology {
     hash.update(Buffer.from([0])); // NUL byte
     hash.update(fs.readFileSync(item.absPath));
     fileHexes.push(hash.digest('hex'));
+  }
+  const routerMappingSource = routerMappings.routesByComponent.size === 0
+    ? ''
+    : [...routerMappings.routesByComponent.entries()]
+      .map(([componentPath, mappedRoutes]) => (
+        `${toPosixPath(path.relative(projectRoot, componentPath))}\0${mappedRoutes.join('\0')}`
+      ))
+      .sort()
+      .join('\n')
+      + '\n--preferred--\n'
+      + [...routerMappings.preferredComponentByRoute.entries()]
+        .map(([route, componentPath]) => (
+          `${route}\0${toPosixPath(path.relative(projectRoot, componentPath))}`
+        ))
+        .sort()
+        .join('\n');
+  if (routerMappingSource) {
+    fileHexes.push(crypto.createHash('sha256').update(routerMappingSource, 'utf8').digest('hex'));
   }
 
   const sourceDigest = crypto
@@ -199,15 +276,36 @@ export function extractProjectTopology(projectRoot: string): ProjectTopology {
       continue;
     }
 
-    const rawRoutePattern = toRoutePattern(projectRoot, item.absPath);
-    if (rawRoutePattern === null) {
+    const mappedRoutes = routerMappings.routesByComponent.get(path.resolve(item.absPath));
+    const fileRoute = toRoutePattern(projectRoot, item.absPath);
+    const rawRoutePatterns = mappedRoutes?.length ? mappedRoutes : fileRoute ? [fileRoute] : [];
+    if (rawRoutePatterns.length === 0) {
       continue;
     }
 
-    const routePattern = rawRoutePattern.replace(/\[([^\]]+)\]/g, ':$1');
+    const routePatterns = rawRoutePatterns
+      .map((route) => route.replace(/\[([^\]]+)\]/g, ':$1'))
+      .filter((pattern) => {
+        const preferred = routerMappings.preferredComponentByRoute.get(pattern);
+        if (preferred && path.resolve(preferred) !== path.resolve(item.absPath)) {
+          console.log(
+            `[IDT] Warning: duplicate route ${pattern}; keeping `
+            + `${toPosixPath(path.relative(projectRoot, preferred))}, skipping ${item.relPosix}`,
+          );
+          return false;
+        }
+        const existing = routes[pattern];
+        if (!existing) return true;
+        console.log(
+          `[IDT] Warning: duplicate route ${pattern}; keeping ${existing.filePath}, `
+          + `skipping ${item.relPosix}`,
+        );
+        return false;
+      });
+    if (routePatterns.length === 0) continue;
+    const routePattern = routePatterns[0];
     const ext = path.extname(item.absPath);
     const title = path.basename(item.absPath, ext);
-    const dynamicParams = extractDynamicParams(routePattern);
 
     const sf = item.sf;
 
@@ -281,7 +379,7 @@ export function extractProjectTopology(projectRoot: string): ProjectTopology {
     const callExpressions = sf.getDescendantsOfKind(SyntaxKind.CallExpression);
     for (const call of callExpressions) {
       const exprText = call.getExpression().getText();
-      const isJump = /(?:^|\.)(navigate|router\.push|history\.push|redirect)$/.test(exprText);
+      const isJump = /(?:^|\.)(\$router\.(?:push|replace)|navigate|router\.push|history\.push|redirect)$/.test(exprText);
       if (!isJump) continue;
 
       const args = call.getArguments();
@@ -325,11 +423,11 @@ export function extractProjectTopology(projectRoot: string): ProjectTopology {
         }
       } else if (enclosingFn) {
         let fnName: string | undefined;
-        if (Node.isFunctionDeclaration(enclosingFn)) {
+        if (Node.isFunctionDeclaration(enclosingFn) || Node.isMethodDeclaration(enclosingFn)) {
           fnName = enclosingFn.getName();
         } else {
           const parent = enclosingFn.getParent();
-          if (parent && Node.isVariableDeclaration(parent)) {
+          if (parent && (Node.isVariableDeclaration(parent) || Node.isPropertyAssignment(parent))) {
             fnName = parent.getName();
           }
         }
@@ -342,6 +440,9 @@ export function extractProjectTopology(projectRoot: string): ProjectTopology {
           triggerType = 'CLICK';
           const { jsxElement } = clickReferencedFns.get(fnName)!;
           triggerElementText = getJsxStaticText(jsxElement);
+        } else if (fnName && item.vue?.clicks.has(fnName)) {
+          triggerType = 'CLICK';
+          triggerElementText = item.vue.clicks.get(fnName);
         }
       }
 
@@ -396,8 +497,39 @@ export function extractProjectTopology(projectRoot: string): ProjectTopology {
       }
     }
 
+    if (item.vue) {
+      for (const link of item.vue.links) {
+        transitions.push({
+          targetRoute: link.targetRoute,
+          triggerType: 'CLICK',
+          triggerElementText: link.text,
+          codeSlice: createCodeSlice(null),
+        });
+      }
+    }
+
     // Collect keywords
     const routeKeywords: string[] = [];
+
+    if (item.vue) {
+      for (const text of item.vue.texts) {
+        routeKeywords.push(text);
+        const key = `${routePattern}:::${text}`;
+        if (!semanticIndexMap.has(key)) {
+          semanticIndexMap.set(key, { keyword: text, route: routePattern, kind: 'text' });
+        }
+      }
+      for (const i18nKey of item.vue.i18nKeys) {
+        const resolved = resolveI18nKey(i18nKey).trim();
+        if (resolved.length >= 2) {
+          routeKeywords.push(resolved);
+          const entryKey = `${routePattern}:::${resolved}`;
+          if (!semanticIndexMap.has(entryKey)) {
+            semanticIndexMap.set(entryKey, { keyword: resolved, route: routePattern, kind: 'i18n' });
+          }
+        }
+      }
+    }
 
     // a. JSX text
     const jsxTexts = sf.getDescendantsOfKind(SyntaxKind.JsxText);
@@ -437,7 +569,7 @@ export function extractProjectTopology(projectRoot: string): ProjectTopology {
     // c. i18n calls: t('key') or formatMessage({ id: 'key' })
     for (const call of callExpressions) {
       const exprText = call.getExpression().getText();
-      if (exprText === 't' || exprText.endsWith('.t')) {
+      if (exprText === 't' || exprText.endsWith('.t') || exprText === '$t' || exprText.endsWith('.$t')) {
         const args = call.getArguments();
         if (args.length > 0 && Node.isStringLiteral(args[0])) {
           const key = args[0].getLiteralValue();
@@ -496,14 +628,27 @@ export function extractProjectTopology(projectRoot: string): ProjectTopology {
       }
     }
 
-    routes[routePattern] = {
-      path: routePattern,
-      filePath: item.relPosix,
-      title,
-      semanticKeywords: Array.from(new Set(routeKeywords)),
-      dynamicParams,
-      transitions,
-    };
+    const primarySemanticEntries = [...semanticIndexMap.values()].filter(
+      (entry) => entry.route === routePattern,
+    );
+    for (const pattern of routePatterns) {
+      if (pattern !== routePattern) {
+        for (const entry of primarySemanticEntries) {
+          const key = `${pattern}:::${entry.keyword}`;
+          if (!semanticIndexMap.has(key)) {
+            semanticIndexMap.set(key, { ...entry, route: pattern });
+          }
+        }
+      }
+      routes[pattern] = {
+        path: pattern,
+        filePath: item.relPosix,
+        title,
+        semanticKeywords: Array.from(new Set(routeKeywords)),
+        dynamicParams: extractDynamicParams(pattern),
+        transitions: transitions.map((transition) => ({ ...transition })),
+      };
+    }
   }
 
   // Second pass: Route normalization for transitions
@@ -611,4 +756,3 @@ export function readSemanticIndex(projectRoot: string): SemanticIndex {
     throw error;
   }
 }
-

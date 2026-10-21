@@ -28,7 +28,7 @@ export function toRoutePattern(projectRoot: string, filePath: string): string | 
   if (!underPages) return null;
   const body = relative
     .replace(/^.*?\/(pages|views)\//, '')
-    .replace(/\.(tsx|jsx|ts|js)$/, '')
+    .replace(/\.(tsx|jsx|ts|js|vue)$/, '')
     .replace(/\/index$/, '')
     .replace(/^index$/, '');
   return `/${body}`;

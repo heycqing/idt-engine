@@ -65,6 +65,12 @@ describe('path utils', () => {
       toRoutePattern(projectRoot, path.join(projectRoot, 'src/components/Button.tsx')),
       null
     );
+
+    // 10. src/views/transfer/today/index.vue -> /transfer/today
+    assert.equal(
+      toRoutePattern(projectRoot, path.join(projectRoot, 'src/views/transfer/today/index.vue')),
+      '/transfer/today'
+    );
   });
 
   it('toPosixPath replaces separators with /', () => {
