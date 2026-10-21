@@ -7,16 +7,26 @@ const ENGINE_REPO = 'https://github.com/heycqing/idt-engine.git';
 const SUBMODULE_DIR = 'idt-engine';
 
 const PAGE_GLOBS = [
-  ['src/pages', 'src/pages/**/*.{tsx,jsx,ts,js}'],
+  ['src/pages', 'src/pages/**/*.{tsx,jsx,ts,js,vue}'],
   ['src/app', 'src/app/**/page.{tsx,jsx}'],
-  ['src/views', 'src/views/**/*.{tsx,jsx,ts,js}'],
-  ['pages', 'pages/**/*.{tsx,jsx,ts,js}'],
+  ['src/views', 'src/views/**/*.{tsx,jsx,ts,js,vue}'],
+  ['pages', 'pages/**/*.{tsx,jsx,ts,js,vue}'],
   ['app', 'app/**/page.{tsx,jsx}'],
+];
+
+const ROUTER_GLOBS = [
+  ['src/router', 'src/router/**/*.{js,ts}'],
+  ['src/credit/router', 'src/credit/router/**/*.{js,ts}'],
 ];
 
 const LOCALE_CANDIDATES = ['src/locales/zh-CN.json', 'locales/zh-CN.json'];
 
+const E2E_COMMAND = 'playwright test --config=playwright.idt.config.ts';
+const ENV_FILE = '.env.idt.local';
+const ENV_EXAMPLE_FILE = '.env.idt.example';
+
 const GITIGNORE_LINES = [
+  ENV_FILE,
   '.idt/',
   'test-results/',
   'playwright-report/',
@@ -39,8 +49,10 @@ export function engineRootFromScript() {
 }
 
 export function toPosixRelative(fromDir, toDir) {
-  const rel = path.relative(fromDir, toDir).split(path.sep).join('/');
+  const nativeRel = path.relative(fromDir, toDir);
+  const rel = nativeRel.split(path.sep).join('/');
   if (rel === '') return '.';
+  if (path.isAbsolute(nativeRel)) return rel;
   return rel.startsWith('.') ? rel : `./${rel}`;
 }
 
@@ -83,8 +95,28 @@ export function detectLocaleFiles(hostRoot) {
   return LOCALE_CANDIDATES.filter((rel) => fs.existsSync(path.join(hostRoot, rel)));
 }
 
-export function renderIdtConfig(pageGlobs, localeFiles) {
-  return `export default {\n  pageGlobs: ${JSON.stringify(pageGlobs, null, 2).replace(/\n/g, '\n  ')},\n  localeFiles: ${JSON.stringify(localeFiles)},\n};\n`;
+export function detectRouterGlobs(hostRoot) {
+  const found = [];
+  const add = (dirRel, glob) => {
+    if (fs.existsSync(path.join(hostRoot, dirRel)) && !found.includes(glob)) found.push(glob);
+  };
+
+  for (const [dirRel, glob] of ROUTER_GLOBS) add(dirRel, glob);
+  for (const parent of ['apps', 'packages']) {
+    const parentAbs = path.join(hostRoot, parent);
+    if (!fs.existsSync(parentAbs)) continue;
+    for (const entry of fs.readdirSync(parentAbs, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      for (const [dirRel, glob] of ROUTER_GLOBS) {
+        add(`${parent}/${entry.name}/${dirRel}`, `${parent}/${entry.name}/${glob}`);
+      }
+    }
+  }
+  return found.sort();
+}
+
+export function renderIdtConfig(pageGlobs, localeFiles, routerGlobs = []) {
+  return `export default {\n  pageGlobs: ${JSON.stringify(pageGlobs, null, 2).replace(/\n/g, '\n  ')},\n  localeFiles: ${JSON.stringify(localeFiles)},\n  routerGlobs: ${JSON.stringify(routerGlobs, null, 2).replace(/\n/g, '\n  ')},\n};\n`;
 }
 
 export function renderPlaywrightConfig(localCommand) {
@@ -117,17 +149,36 @@ export default defineConfig({
 `;
 }
 
+export function renderEnvExample() {
+  return `# IDT 项目就近配置模板。复制为 ${ENV_FILE} 后填写，${ENV_FILE} 已被 .gitignore 忽略。
+# 这三项只服务 pnpm idt（gen）。sync、emit、heal 不需要。
+# 留空的字段会回退到终端环境变量，再回退到引擎默认值。
+
+# 模型密钥。不要把真实值写进这个模板文件。
+OPENAI_API_KEY=
+
+# 兼容 OpenAI 的接口地址，默认 https://api.openai.com/v1
+OPENAI_BASE_URL=
+
+# 模型名，默认 gpt-4o
+IDT_MODEL_NAME=
+`;
+}
+
 export function quoteCmd(posixPath) {
   return posixPath.includes(' ') ? `"${posixPath}"` : posixPath;
 }
 
-export function desiredScripts(enginePosix) {
+export function desiredScripts(enginePosix, tsxRuntimePosix = '') {
   const cli = quoteCmd(`${enginePosix}/scripts/idt/cli.ts`);
+  const command = tsxRuntimePosix
+    ? `node ${quoteCmd(tsxRuntimePosix)} ${cli}`
+    : `tsx ${cli}`;
   return {
-    idt: `tsx ${cli} gen`,
-    'idt:sync': `tsx ${cli} sync`,
-    'idt:emit': `tsx ${cli} emit`,
-    'idt:heal': `tsx ${cli} heal`,
+    idt: `${command} gen`,
+    'idt:sync': `${command} sync`,
+    'idt:emit': `${command} emit`,
+    'idt:heal': `${command} heal`,
   };
 }
 
@@ -228,7 +279,11 @@ export function linkHost(options) {
   }
 
   const enginePosix = toPosixRelative(hostRoot, linkedEngine);
-  const scripts = desiredScripts(enginePosix);
+  const localTsx = path.join(linkedEngine, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+  const tsxRuntimePosix = options.noInstall && fs.existsSync(localTsx)
+    ? toPosixRelative(hostRoot, localTsx)
+    : '';
+  const scripts = desiredScripts(enginePosix, tsxRuntimePosix);
   const pkgPath = path.join(hostRoot, 'package.json');
   const pkg = readJson(pkgPath);
   pkg.scripts ??= {};
@@ -242,10 +297,12 @@ export function linkHost(options) {
     }
   }
   if (pkg.scripts['test:e2e'] === undefined) {
-    pkg.scripts['test:e2e'] = 'playwright test --config=playwright.idt.config.ts';
+    pkg.scripts['test:e2e'] = E2E_COMMAND;
     scriptNotes.push('写入脚本 test:e2e');
-  } else if (pkg.scripts['test:idt:e2e'] === undefined) {
-    pkg.scripts['test:idt:e2e'] = 'playwright test --config=playwright.idt.config.ts';
+  } else if (pkg.scripts['test:e2e'] === E2E_COMMAND || pkg.scripts['test:idt:e2e'] === E2E_COMMAND) {
+    scriptNotes.push('保留已有的 IDT 端到端脚本');
+  } else {
+    pkg.scripts['test:idt:e2e'] = E2E_COMMAND;
     scriptNotes.push('宿主已有 test:e2e，IDT 使用 test:idt:e2e');
   }
   writeJson(pkgPath, pkg);
@@ -255,7 +312,8 @@ export function linkHost(options) {
   if (!fs.existsSync(configPath)) {
     const detected = detectPageGlobs(hostRoot);
     const locales = detectLocaleFiles(hostRoot);
-    fs.writeFileSync(configPath, renderIdtConfig(detected.pageGlobs, locales), 'utf8');
+    const routerGlobs = detectRouterGlobs(hostRoot);
+    fs.writeFileSync(configPath, renderIdtConfig(detected.pageGlobs, locales, routerGlobs), 'utf8');
     configWritten = true;
     if (detected.usedDefaults) {
       notes.push('没有扫到页面目录，idt.config.ts 使用了默认 pageGlobs。页面若不在 src/pages、src/app、src/views，请改这份文件后再执行 pnpm idt:sync。');
@@ -275,6 +333,15 @@ export function linkHost(options) {
     }
   } else {
     notes.push('保留已有 playwright.idt.config.ts');
+  }
+
+  const envExamplePath = path.join(hostRoot, ENV_EXAMPLE_FILE);
+  let envExampleWritten = false;
+  if (!fs.existsSync(envExamplePath)) {
+    fs.writeFileSync(envExamplePath, renderEnvExample(), 'utf8');
+    envExampleWritten = true;
+  } else {
+    notes.push(`保留已有 ${ENV_EXAMPLE_FILE}`);
   }
 
   const gitignorePath = path.join(hostRoot, '.gitignore');
@@ -314,13 +381,14 @@ export function linkHost(options) {
   }
 
   for (const line of [...scriptNotes, ...notes]) log(line);
-  log('接入完成。在宿主根目录设置 OPENAI_API_KEY 后执行 pnpm idt "一句意图"。先不要加 --yes。');
+  log(`接入完成。在宿主根目录把 ${ENV_EXAMPLE_FILE} 复制为 ${ENV_FILE} 并填写项目配置，然后执行 pnpm idt "一句意图"。先不要加 --yes。`);
 
   return {
     hostRoot,
     enginePosix,
     configWritten,
     playwrightWritten,
+    envExampleWritten,
     gitignoreAdded: merged.added,
     missing,
     installCode,
