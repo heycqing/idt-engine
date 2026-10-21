@@ -8,7 +8,7 @@ import {
   playwrightTestInvocation,
   runPlaywrightSpec,
   RunnerError,
-} from './runner.js';
+} from '../../../src/idt/core/runner.js';
 
 describe('runner', () => {
   it('runCommand captures stdout, stderr and exitCode accurately', async () => {

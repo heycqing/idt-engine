@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { extractVueSfc, listVueFiles, scanVueTemplate, stripVueFromGlob } from './vue-sfc.js';
+import { extractVueSfc, listVueFiles, scanVueTemplate, stripVueFromGlob } from '../../../src/idt/extract/vue-sfc.js';
 
 describe('vue sfc', () => {
   it('strips vue out of mixed globs and drops vue-only globs', () => {

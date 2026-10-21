@@ -18,11 +18,11 @@ function findTestFiles(dir: string): string[] {
 }
 
 const projectRoot = process.cwd();
-const srcIdtDir = path.resolve(projectRoot, 'src/idt');
-const testFiles = findTestFiles(srcIdtDir).sort();
+const unitTestDir = path.resolve(projectRoot, 'tests/unit');
+const testFiles = findTestFiles(unitTestDir).sort();
 
 if (testFiles.length === 0) {
-  console.error('No unit test files found in src/idt');
+  console.error('No unit test files found in tests/unit');
   process.exit(1);
 }
 

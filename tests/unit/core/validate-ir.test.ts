@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { validateIr } from './validate-ir.js';
-import type { StateTransitionIR } from './ir-schema.js';
+import { validateIr } from '../../../src/idt/core/validate-ir.js';
+import type { StateTransitionIR } from '../../../src/idt/core/ir-schema.js';
 
 function createTempDir(prefix = 'idt-val-test-'): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));

@@ -54,4 +54,4 @@ routerGlobs: [
 - 自愈失败 spec：`pnpm idt:heal <spec路径>`
 - 同步拓扑与语义索引：`pnpm idt:sync`
 - 运行端到端测试：`pnpm test:e2e`
-- 运行单元测试套件：`pnpm test:idt`（单测不访问网络，也不启动浏览器）
+- 运行单元测试套件：`pnpm test:idt`（单测在 `tests/unit/`，不访问网络，也不启动浏览器）

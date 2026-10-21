@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAriaSnapshot } from './aria-snapshot.js';
+import { parseAriaSnapshot } from '../../../src/idt/core/aria-snapshot.js';
 
 describe('aria-snapshot', () => {
   it('parses simple role and name with leading spaces', () => {

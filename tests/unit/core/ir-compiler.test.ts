@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { compileIntent, IR_SYSTEM_PROMPT, type ModelClient } from './ir-compiler.js';
-import { flowIdFromIntent } from './intent.js';
-import { OpenAiClient } from './openai-client.js';
+import { compileIntent, IR_SYSTEM_PROMPT, type ModelClient } from '../../../src/idt/core/ir-compiler.js';
+import { flowIdFromIntent } from '../../../src/idt/core/intent.js';
+import { OpenAiClient } from '../../../src/idt/core/openai-client.js';
 
 function createTempDir(prefix = 'idt-comp-test-'): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));

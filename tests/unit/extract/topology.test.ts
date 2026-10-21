@@ -6,12 +6,12 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { extractProjectTopology, readTopology } from './topology.js';
+import { extractProjectTopology, readTopology } from '../../../src/idt/extract/topology.js';
 import {
   ProjectTopologySchema,
   SemanticIndexSchema,
-} from '../schemas/topology.schema.js';
-import { DEFAULT_IDT_CONFIG, loadIdtConfig } from '../config/load.js';
+} from '../../../src/idt/schemas/topology.schema.js';
+import { DEFAULT_IDT_CONFIG, loadIdtConfig } from '../../../src/idt/config/load.js';
 
 function createTempDir(prefix = 'idt-test-'): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));

@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { extractProjectTopology, readSemanticIndex } from '../extract/topology.js';
-import { findRoutePath } from './pathfinder.js';
-import type { ProjectTopology, SemanticIndex } from '../schemas/topology.schema.js';
+import { extractProjectTopology, readSemanticIndex } from '../../../src/idt/extract/topology.js';
+import { findRoutePath } from '../../../src/idt/core/pathfinder.js';
+import type { ProjectTopology, SemanticIndex } from '../../../src/idt/schemas/topology.schema.js';
 
 function createTempDir(prefix = 'idt-path-test-'): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));

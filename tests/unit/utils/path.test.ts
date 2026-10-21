@@ -6,7 +6,7 @@ import {
   toRoutePattern,
   segmentsMatch,
   extractDynamicParams,
-} from './path.js';
+} from '../../../src/idt/utils/path.js';
 
 describe('path utils', () => {
   const projectRoot = path.resolve('/workspace/project');

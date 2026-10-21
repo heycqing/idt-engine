@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { emitSpec, emitIrFile } from './emitter.js';
-import type { StateTransitionIR } from './ir-schema.js';
+import { emitSpec, emitIrFile } from '../../../src/idt/core/emitter.js';
+import type { StateTransitionIR } from '../../../src/idt/core/ir-schema.js';
 
 function createTempDir(prefix = 'idt-emit-test-'): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -21,7 +21,7 @@ function removeTempDir(dir: string): void {
 
 describe('emitter test suite', () => {
   const projectRoot = process.cwd();
-  const fixturesDir = path.resolve(projectRoot, 'src/idt/core/fixtures');
+  const fixturesDir = path.resolve(projectRoot, 'tests/unit/core/fixtures');
 
   // Requirement 1: emitSpec on flow_aabbccddee.ir.json matches golden byte-for-byte
   it('Requirement 1: emitSpec on flow_aabbccddee.ir.json matches flow_aabbccddee.spec.ts byte-for-byte', () => {

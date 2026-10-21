@@ -5,7 +5,7 @@ import {
   similarity,
   scoreAcceptable,
   chooseReplacement,
-} from './similarity.js';
+} from '../../../src/idt/core/similarity.js';
 
 describe('similarity', () => {
   it('Requirement 1: identity, empty string, and single char distance', () => {

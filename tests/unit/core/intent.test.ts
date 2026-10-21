@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeIntent, flowIdFromIntent } from './intent.js';
+import { normalizeIntent, flowIdFromIntent } from '../../../src/idt/core/intent.js';
 
 describe('intent and flowId', () => {
   it('Requirement 7: flowId derivation and normalization rules', () => {

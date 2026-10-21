@@ -5,10 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { generateFlow } from './generate.js';
-import { emitSpec } from './emitter.js';
-import { flowIdFromIntent } from './intent.js';
-import type { ModelClient } from './ir-compiler.js';
+import { generateFlow } from '../../../src/idt/core/generate.js';
+import { emitSpec } from '../../../src/idt/core/emitter.js';
+import { flowIdFromIntent } from '../../../src/idt/core/intent.js';
+import type { ModelClient } from '../../../src/idt/core/ir-compiler.js';
 
 function createTempDir(prefix = 'idt-gen-test-'): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));

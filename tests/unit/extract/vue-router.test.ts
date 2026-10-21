@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { extractVueRouterMappings } from './vue-router.js';
+import { extractVueRouterMappings } from '../../../src/idt/extract/vue-router.js';
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'idt-vue-router-'));

@@ -11,7 +11,7 @@ import {
   loadIdtProjectEnv,
   parseEnvFile,
   requireModelCredentials,
-} from './project-env.js';
+} from '../../../src/idt/config/project-env.js';
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'idt-project-env-'));

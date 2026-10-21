@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "scripts", "idt.config.ts"]
+  "include": ["src", "scripts", "tests", "idt.config.ts"]
 }

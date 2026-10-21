@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import type { StateTransitionIR } from './ir-schema.js';
-import { emitSpec } from './emitter.js';
-import { heal, firstFailure } from './healer.js';
+import type { StateTransitionIR } from '../../../src/idt/core/ir-schema.js';
+import { emitSpec } from '../../../src/idt/core/emitter.js';
+import { heal, firstFailure } from '../../../src/idt/core/healer.js';
 
 function setupFixture(dir: string) {
   const ir: StateTransitionIR = {

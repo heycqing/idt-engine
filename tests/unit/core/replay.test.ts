@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import type { StateTransitionIR } from './ir-schema.js';
-import { replayUntil, type ReplayPage } from './replay.js';
+import type { StateTransitionIR } from '../../../src/idt/core/ir-schema.js';
+import { replayUntil, type ReplayPage } from '../../../src/idt/core/replay.js';
 
 class MockReplayPage implements ReplayPage {
   calls: string[] = [];
