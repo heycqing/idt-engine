@@ -156,4 +156,18 @@ describe('vue sfc', () => {
       { role: 'link', name: '买入' },
     ]);
   });
+  it('marks a name as dynamic when interpolation sits inside otherwise static text', () => {
+    // 真实宿主上踩到的：模板是 <div>保持在线 {{hours}} 小时</div>，
+    // 剥掉插值后剩下 "保持在线 小时"，这个名字运行期永远匹配不到。
+    const scan = scanVueTemplate(`
+      <div>
+        <h3>保持在线 {{ hours }} 小时</h3>
+        <h3>纯静态标题</h3>
+      </div>
+    `);
+    assert.deepEqual(scan.elements, [
+      { role: 'heading', dynamic: true, tag: 'h3' },
+      { role: 'heading', name: '纯静态标题' },
+    ]);
+  });
 });

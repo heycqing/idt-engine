@@ -53,7 +53,8 @@ Requirements:
 3. Every targetRole and targetName pair must come from the "elements" list of the matching page in the payload, or from the provided code slices or prose case. The elements list is a static candidate set, not a guarantee; never invent a name that is not in it.
 4. An element with "dynamic": true has a name that is only known at runtime. Do not guess it.
 5. Network invariant method, urlPattern, expectedStatus, and assertResponseFields must strictly come from code slices or prose case assertions.
-6. An intent that only opens a page is one stage with an empty "actions" array, asserted through invariants.routeGuard with readyRole and readyName taken from a heading in the elements list. This is valid output. An empty elements list or absent code slices is NOT a reason to return zero stages.
+6. An intent that only opens a page is one stage with an empty "actions" array, asserted through invariants.routeGuard. This is valid output. An empty elements list or absent code slices is NOT a reason to return zero stages.
+6a. routeGuard.readyRole and readyName are under the SAME rule as targetRole and targetName: the pair must appear verbatim in that page's "elements" list, and an element with "dynamic": true has no usable name. If no element of the page qualifies, omit readyRole and readyName entirely and let the routeGuard assert the URL alone. Never fall back to the page title, a semanticKeyword, or any other string outside the elements list.
 7. "unresolved" is only for operations the intent asks for but the payload cannot support: a required control missing from the elements list, a value with no matching input, or a name that is dynamic. Never put complaints about the payload itself (such as missing code slices) in it. A non-empty "unresolved" blocks spec emission, so leave it empty when the flow is fully determined.
 `;
 

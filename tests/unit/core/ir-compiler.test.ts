@@ -522,6 +522,9 @@ describe('ir-compiler', () => {
     // 纯导航用例必须是合法形态，否则 90 条无出边路由永远产不出 spec
     assert.match(IR_SYSTEM_PROMPT, /actions/);
     assert.match(IR_SYSTEM_PROMPT, /unresolved/);
+    // readyRole/readyName 必须和 targetName 受同样约束，否则模型会拿页面标题顶替
+    assert.match(IR_SYSTEM_PROMPT, /readyRole and readyName are under the SAME rule/);
+    assert.match(IR_SYSTEM_PROMPT, /omit readyRole and readyName entirely/);
   });
   it('extracts the topology with the globs handed in by the caller', async () => {
     const tmp = createTempDir();

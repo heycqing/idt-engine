@@ -391,7 +391,9 @@ function elementOf(frame: Frame): PageElement | null {
     }
   }
 
-  const text = frame.texts.join(' ').trim();
+  // 帧内出现过插值就不能用可见文本当名字：剥掉 {{ }} 之后剩下的是残句，
+  // 比如 "保持在线 {{hours}} 小时" 会变成 "保持在线 小时"，运行期永远匹配不到。
+  const text = frame.interpolated ? '' : frame.texts.join(' ').trim();
   if (text.length > 0) return { role: frame.role, name: text };
 
   const title = literalAttr(frame.attrs, 'title');
