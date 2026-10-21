@@ -4,6 +4,7 @@ import { type StateTransitionIR } from './ir-schema.js';
 import { emitSpec } from './emitter.js';
 import { runPlaywrightSpec } from './runner.js';
 import { replayUntil, launchChromiumReplay } from './replay.js';
+import { readRouterOptions } from './route-url.js';
 import { parseAriaSnapshot } from './aria-snapshot.js';
 import { chooseReplacement } from './similarity.js';
 
@@ -286,7 +287,7 @@ export async function heal(options: HealOptions): Promise<HealResult> {
       return launchChromiumReplay(
         options.projectRoot,
         currentIr.setup?.storageStatePath,
-        (page) => replayUntil(currentIr, healTarget, page),
+        (page) => replayUntil(currentIr, healTarget, page, readRouterOptions(options.projectRoot)),
         options.baseUrl,
       );
     });

@@ -1,4 +1,10 @@
 import path from 'node:path';
+import {
+  DEFAULT_ROUTER_URL_OPTIONS,
+  toBrowserUrl,
+  toGuardPattern,
+  type RouterUrlOptions,
+} from './route-url.js';
 import { chromium } from '@playwright/test';
 import type { StateTransitionIR } from './ir-schema.js';
 
@@ -16,9 +22,10 @@ export async function replayUntil(
   ir: StateTransitionIR,
   target: { stageIndex: number; actionIndex: number },
   page: ReplayPage,
+  router: RouterUrlOptions = DEFAULT_ROUTER_URL_OPTIONS,
 ): Promise<string> {
-  // 1. page.goto(ir.initialRoute). Do not write hostname.
-  await page.goto(ir.initialRoute);
+  // 1. page.goto(初始路由装配出的地址)。不写主机名。
+  await page.goto(toBrowserUrl(ir.initialRoute, router));
 
   for (let stageIdx = 0; stageIdx < ir.stages.length; stageIdx++) {
     const stage = ir.stages[stageIdx];
@@ -90,7 +97,7 @@ export async function replayUntil(
     if (stageIdx < target.stageIndex && stage.invariants.routeGuard) {
       const guard = stage.invariants.routeGuard;
       const timeout = triggerIndex >= 0 ? stage.actions[triggerIndex].timeoutMs : 5000;
-      await page.waitForURL(guard.targetUrlPattern, timeout);
+      await page.waitForURL(toGuardPattern(guard.targetUrlPattern, router), timeout);
     }
   }
 

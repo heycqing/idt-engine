@@ -148,6 +148,9 @@ export interface ExtractTopologyOptions {
   config?: IdtConfig;
   /** 写进拓扑顶层的项目名，便于单看一份产物认出它属于谁。 */
   projectName?: string;
+  /** 覆盖静态检测出的路由模式与 base，静态解析盖不到的写法走这里。 */
+  routerMode?: 'hash' | 'history';
+  routerBase?: string;
 }
 
 export function extractProjectTopology(
@@ -189,6 +192,8 @@ export function extractProjectTopology(
   fileItems.push(...vuePages);
   fileItems.sort((a, b) => a.relPosix.localeCompare(b.relPosix));
   const routerMappings = extractVueRouterMappings(projectRoot, config.routerGlobs);
+  const resolvedRouterMode = options.routerMode ?? routerMappings.routerMode;
+  const resolvedRouterBase = options.routerBase ?? routerMappings.routerBase;
   if (config.routerGlobs.length > 0) {
     console.log(
       `[IDT] Vue Router: records=${routerMappings.routeRecordCount} `
@@ -682,6 +687,14 @@ export function extractProjectTopology(
     generatedAt,
     sourceDigest,
     ...(options.projectName ? { project: options.projectName } : {}),
+    ...(resolvedRouterMode
+      ? {
+          router: {
+            mode: resolvedRouterMode,
+            ...(resolvedRouterBase ? { base: resolvedRouterBase } : {}),
+          },
+        }
+      : {}),
     routes,
   };
 

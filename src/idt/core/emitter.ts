@@ -6,6 +6,13 @@ import {
   type StateTransitionIR,
 } from './ir-schema.js';
 import { validateIr } from './validate-ir.js';
+import {
+  DEFAULT_ROUTER_URL_OPTIONS,
+  readRouterOptions,
+  toBrowserUrl,
+  toGuardPattern,
+  type RouterUrlOptions,
+} from './route-url.js';
 
 export class EmitterError extends Error {
   exitCode: number;
@@ -29,7 +36,10 @@ const FORBIDDEN_TOKENS = [
   'enableVisualSnapshot',
 ];
 
-export function emitSpec(ir: unknown): string {
+export function emitSpec(
+  ir: unknown,
+  router: RouterUrlOptions = DEFAULT_ROUTER_URL_OPTIONS,
+): string {
   const parsed = StateTransitionIRSchema.safeParse(ir);
   if (!parsed.success) {
     throw new EmitterError(
@@ -185,7 +195,9 @@ export function emitSpec(ir: unknown): string {
   lines.push(
     `test(${JSON.stringify(validIr.description)}, async ({ page }) => {`
   );
-  lines.push(`  await page.goto(${JSON.stringify(validIr.initialRoute)});`);
+  lines.push(
+    `  await page.goto(${JSON.stringify(toBrowserUrl(validIr.initialRoute, router))});`,
+  );
 
   let responseCounter = 0;
 
@@ -284,7 +296,9 @@ export function emitSpec(ir: unknown): string {
 
     // Route guard
     if (routeGuard) {
-      const patternStr = JSON.stringify(routeGuard.targetUrlPattern);
+      const patternStr = JSON.stringify(
+        toGuardPattern(routeGuard.targetUrlPattern, router),
+      );
       lines.push(
         `  await page.waitForURL(new RegExp(${patternStr}), { timeout: ${triggerTimeout} });`
       );
@@ -315,7 +329,8 @@ export function emitSpec(ir: unknown): string {
 
 export function emitIrFile(
   projectRoot: string,
-  irFilePath: string
+  irFilePath: string,
+  router: RouterUrlOptions = readRouterOptions(projectRoot),
 ): { specPath: string; source: string } {
   const resolvedIrPath = path.isAbsolute(irFilePath)
     ? irFilePath
@@ -366,7 +381,7 @@ export function emitIrFile(
     fileStem,
   });
 
-  const source = emitSpec(ir);
+  const source = emitSpec(ir, router);
 
   const specDir = path.dirname(resolvedIrPath);
   const specPath = path.join(specDir, `${fileStem}.spec.ts`);

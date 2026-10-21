@@ -9,6 +9,10 @@ export interface VueRouterMappingResult {
   routeRecordCount: number;
   mappedRouteCount: number;
   unresolvedComponents: string[];
+  /** 静态解析出的路由模式。认不出来就是 undefined，由调用方决定回落。 */
+  routerMode?: 'hash' | 'history';
+  /** 只认字符串字面量的 base。表达式不猜。 */
+  routerBase?: string;
 }
 
 export function extractVueRouterMappings(
@@ -23,6 +27,8 @@ export function extractVueRouterMappings(
     unresolvedComponents: [],
   };
   if (routerGlobs.length === 0) return result;
+
+  const modeSightings: Array<{ mode: 'hash' | 'history'; where: string }> = [];
 
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
@@ -44,6 +50,8 @@ export function extractVueRouterMappings(
 
   const unresolved = new Set<string>();
   for (const sourceFile of sourceFiles) {
+    detectRouterMode(sourceFile, modeSightings, result);
+
     for (const object of sourceFile.getDescendantsOfKind(SyntaxKind.ObjectLiteralExpression)) {
       const ownPath = readStringProperty(object, 'path');
       const component = readPropertyExpression(object, 'component');
@@ -72,7 +80,53 @@ export function extractVueRouterMappings(
 
   for (const routes of result.routesByComponent.values()) routes.sort();
   result.unresolvedComponents = [...unresolved].sort();
+
+  if (modeSightings.length > 0) {
+    result.routerMode = modeSightings[0].mode;
+    const conflicting = modeSightings.filter((s) => s.mode !== modeSightings[0].mode);
+    if (conflicting.length > 0) {
+      console.log(
+        `[IDT] Warning: conflicting router mode. Keeping ${modeSightings[0].mode} from `
+          + `${modeSightings[0].where}, ignoring ${conflicting.map((s) => `${s.mode} in ${s.where}`).join(', ')}`,
+      );
+    }
+  }
+
   return result;
+}
+
+/**
+ * 认 new VueRouter({ mode }) 和 createRouter({ history: createWebHashHistory() })。
+ * mode 写成变量或三元就不猜，base 只认字符串字面量。
+ * 注释掉的 router 不会被解析成节点，所以天然不参与判断。
+ */
+function detectRouterMode(
+  sourceFile: SourceFile,
+  sightings: Array<{ mode: 'hash' | 'history'; where: string }>,
+  result: VueRouterMappingResult,
+): void {
+  const where = path.basename(sourceFile.getFilePath());
+
+  for (const object of sourceFile.getDescendantsOfKind(SyntaxKind.ObjectLiteralExpression)) {
+    const mode = readStringProperty(object, 'mode');
+    const historyExpr = readPropertyExpression(object, 'history');
+
+    let found: 'hash' | 'history' | null = null;
+    if (mode === 'hash' || mode === 'history') {
+      found = mode;
+    } else if (historyExpr) {
+      const text = historyExpr.getText();
+      if (text.includes('createWebHashHistory')) found = 'hash';
+      else if (text.includes('createWebHistory')) found = 'history';
+    }
+    if (!found) continue;
+
+    sightings.push({ mode: found, where });
+    if (result.routerBase === undefined) {
+      const base = readStringProperty(object, 'base');
+      if (base) result.routerBase = base;
+    }
+  }
 }
 
 function fullRoutePath(object: Node, ownPath: string): string {

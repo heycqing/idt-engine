@@ -941,4 +941,37 @@ describe('emitter test suite', () => {
       }
     );
   });
+  it('emits hash urls when the router is in hash mode', () => {
+    const ir = JSON.parse(
+      fs.readFileSync(path.join(fixturesDir, 'flow_aabbccddee.ir.json'), 'utf8'),
+    );
+    const source = emitSpec(ir, { mode: 'hash' });
+
+    assert.match(source, /page\.goto\("\/#\/cart"\)/);
+    assert.match(source, /waitForURL\(new RegExp\("#\/checkout\$"\)/);
+    assert.match(source, /toHaveURL\(new RegExp\("#\/checkout\/success\$"\)\)/);
+    assert.equal(source.includes('new RegExp("/checkout$")'), false);
+  });
+
+  it('puts the base before the hash in goto but not in the pattern', () => {
+    const ir = JSON.parse(
+      fs.readFileSync(path.join(fixturesDir, 'flow_aabbccddee.ir.json'), 'utf8'),
+    );
+    const source = emitSpec(ir, { mode: 'hash', base: '/trade/' });
+    assert.match(source, /page\.goto\("\/trade\/#\/cart"\)/);
+    assert.match(source, /new RegExp\("#\/checkout\$"\)/);
+    assert.equal(source.includes('/trade/#/checkout'), false);
+  });
+
+  it('is byte-identical to the fixture when no router options are given', () => {
+    const ir = JSON.parse(
+      fs.readFileSync(path.join(fixturesDir, 'flow_aabbccddee.ir.json'), 'utf8'),
+    );
+    const expected = fs.readFileSync(
+      path.join(fixturesDir, 'flow_aabbccddee.spec.ts'),
+      'utf8',
+    );
+    assert.equal(emitSpec(ir), expected);
+    assert.equal(emitSpec(ir, { mode: 'history' }), expected);
+  });
 });

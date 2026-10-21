@@ -242,4 +242,96 @@ describe('vue router extraction', () => {
     assert.equal(result.mappedRouteCount, 0);
     assert.deepEqual(result.unresolvedComponents, []);
   });
+  it('detects hash and history router modes', () => {
+    const cases: Array<[string, string, string | undefined]> = [
+      ["const router = new VueRouter({ mode: 'hash', routes })", 'hash', undefined],
+      ["const router = new VueRouter({ mode: 'history', routes })", 'history', undefined],
+      ["createRouter({ history: createWebHashHistory(), routes })", 'hash', undefined],
+      ["createRouter({ history: createWebHistory(), routes })", 'history', undefined],
+    ];
+    for (const [source, expected] of cases) {
+      const root = createTempDir();
+      try {
+        writeFile(root, 'src/router/index.js', `${source}\nexport default router\n`);
+        const result = extractVueRouterMappings(root, ['src/router/**/*.js']);
+        assert.equal(result.routerMode, expected, source);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('reads a literal base and refuses to guess an expression', () => {
+    const root = createTempDir();
+    try {
+      writeFile(
+        root,
+        'src/router/index.js',
+        "const router = new VueRouter({ mode: 'hash', base: '/trade/', routes })\nexport default router\n",
+      );
+      const result = extractVueRouterMappings(root, ['src/router/**/*.js']);
+      assert.equal(result.routerMode, 'hash');
+      assert.equal(result.routerBase, '/trade/');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+
+    const other = createTempDir();
+    try {
+      writeFile(
+        other,
+        'src/router/index.js',
+        "const router = new VueRouter({ mode: 'hash', base: window.webConfig.BASE_URL, routes })\nexport default router\n",
+      );
+      const result = extractVueRouterMappings(other, ['src/router/**/*.js']);
+      assert.equal(result.routerMode, 'hash');
+      assert.equal(result.routerBase, undefined);
+    } finally {
+      fs.rmSync(other, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores a commented-out router instance', () => {
+    const root = createTempDir();
+    try {
+      writeFile(
+        root,
+        'src/credit/router/index.js',
+        "// const router = new VueRouter({\n//   mode: 'hash',\n// })\nexport default []\n",
+      );
+      const result = extractVueRouterMappings(root, ['src/credit/router/**/*.js']);
+      assert.equal(result.routerMode, undefined);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the first mode and warns when two routers disagree', () => {
+    const root = createTempDir();
+    const logs: string[] = [];
+    const originalLog = console.log;
+    console.log = (line: string) => logs.push(String(line));
+    try {
+      writeFile(root, 'src/router/a.js', "new VueRouter({ mode: 'hash' })\n");
+      writeFile(root, 'src/router/b.js', "new VueRouter({ mode: 'history' })\n");
+      const result = extractVueRouterMappings(root, ['src/router/**/*.js']);
+      assert.equal(result.routerMode, 'hash');
+      assert.ok(logs.some((line) => line.includes('router mode')));
+    } finally {
+      console.log = originalLog;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reports no mode when nothing matches', () => {
+    const root = createTempDir();
+    try {
+      writeFile(root, 'src/router/index.js', 'export default []\n');
+      const result = extractVueRouterMappings(root, ['src/router/**/*.js']);
+      assert.equal(result.routerMode, undefined);
+      assert.equal(result.routerBase, undefined);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

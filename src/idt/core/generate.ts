@@ -3,6 +3,7 @@ import path from 'node:path';
 import { compileIntent, type ModelClient } from './ir-compiler.js';
 import type { ExtractTopologyOptions } from '../extract/topology.js';
 import { emitSpec } from './emitter.js';
+import { readRouterOptions } from './route-url.js';
 import { runPlaywrightSpec } from './runner.js';
 
 export interface GenerateFlowOptions {
@@ -42,7 +43,7 @@ export async function generateFlow(options: {
   });
 
   // 2. Emit spec and write to tests/e2e/generated/<flowId>.spec.ts
-  const source = emitSpec(ir);
+  const source = emitSpec(ir, readRouterOptions(projectRoot));
   const genDir = path.resolve(projectRoot, 'tests/e2e/generated');
   fs.mkdirSync(genDir, { recursive: true });
 

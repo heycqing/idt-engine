@@ -84,7 +84,9 @@ history 模式的两列与现状逐字符相同，这是回归基线。
 
 hash 模式的 pattern 不含 base。base 由部署决定，同一条 spec 在不同 base 下都该通过，锚在 `#` 上足够区分页面。
 
-`toUrlPattern` 要对路由里的正则元字符做转义。现在 `emitter.ts` 把 `routePattern` 原样塞进 `new RegExp(...)`，路由里出现 `.` 或 `(` 就会变成通配。顺带修掉，history 模式下只有含元字符的路由产物会变。
+**实施时的修订**：原计划让 `toUrlPattern` 对正则元字符做转义，这是错的。IR 的 `routeGuard.targetUrlPattern` 按契约就是正则片段（fixture 里形如 `/checkout$`，schema 的 `SafePattern` 明确放行正则字符），不是路由。对它转义会把合法正则弄坏，也会破坏 fixture 的逐字节不变。
+
+改为 `toGuardPattern`：hash 模式下只把锚点前移到 `#`（`/checkout$` → `#/checkout$`），history 模式原样返回，不做任何转义。只有 `initialRoute` 是真正的路由，走 `toBrowserUrl`。
 
 ## 调用点
 
