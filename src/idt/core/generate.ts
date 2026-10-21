@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { compileIntent, type ModelClient } from './ir-compiler.js';
+import type { ExtractTopologyOptions } from '../extract/topology.js';
 import { emitSpec } from './emitter.js';
 import { runPlaywrightSpec } from './runner.js';
 
@@ -13,6 +14,7 @@ export interface GenerateFlowOptions {
   yes?: boolean;
   runSpec?: (specPath: string) => Promise<{ exitCode: number; report: unknown }>;
   log?: (line: string) => void;
+  extract?: ExtractTopologyOptions;
 }
 
 export async function generateFlow(options: {
@@ -24,8 +26,9 @@ export async function generateFlow(options: {
   yes?: boolean;
   runSpec?: (specPath: string) => Promise<{ exitCode: number; report: unknown }>;
   log?: (line: string) => void;
+  extract?: ExtractTopologyOptions;
 }): Promise<{ exitCode: number; specPath: string }> {
-  const { projectRoot, intent, proseCase, model, force, yes, runSpec } = options;
+  const { projectRoot, intent, proseCase, model, force, yes, runSpec, extract } = options;
   const log = options.log ?? console.log;
 
   // 1. Compile intent - rethrow error as-is, do not write spec
@@ -35,6 +38,7 @@ export async function generateFlow(options: {
     proseCase,
     model,
     force,
+    extract,
   });
 
   // 2. Emit spec and write to tests/e2e/generated/<flowId>.spec.ts

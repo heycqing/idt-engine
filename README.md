@@ -46,12 +46,38 @@ routerGlobs: [
 ],
 ```
 
+## 多项目宿主
+
+一个宿主仓库里可以有多个相互独立的 IDT 项目，比如 monorepo 里的多个券商 App。业务方只在自己的 `package.json` 加一行标志：
+
+```json
+{ "idt": { "project": "caida" } }
+```
+
+`project` 可省略，默认取目录名。需要时同一个对象里还可以写 `pageGlobs`、`routerGlobs`、`localeFiles` 覆盖自动探测。
+
+`idt.config.ts` 用 `projectGlobs` 指定去哪些目录找标志，默认 `['apps/*', 'packages/*']`。配置和 `.env.idt.local` 全仓只有一份，留在 IDT 根目录——标志不是 `idt.config.ts`，所以向上查找会越过被标记的目录走到根上。
+
+每个项目的拓扑、语义索引和生成的 spec 落在各自的项目根下，互不干扰：
+
+```
+apps/caida/.idt/topology.json      apps/caida/tests/e2e/generated/
+apps/yuekai/.idt/topology.json     apps/yuekai/tests/e2e/generated/
+```
+
+命令按这个顺序确定作用于哪个项目：显式 `--project <name>` → 当前工作目录所在的项目 → 只有一个项目时取它 → 否则报错并列出可选项。`pnpm idt:sync` 不带选择器时同步全部项目。
+
+`pnpm idt projects` 列出发现到的项目和它们的 globs。
+
+一个标志都没有时退化为单项目，项目根就是 IDT 根目录，产物路径和行为与引入本机制之前完全一致。
+
 ## 可用命令
 
 - 把引擎接到宿主：`pnpm idt:link -- --host <宿主根目录>`
 - 生成状态转移 IR 与 spec：`pnpm idt "<intent>"`（需要项目根目录的 `.env.idt.local` 填好 `OPENAI_API_KEY`；`gen` 会同时写出 IR 与 spec，带 `--yes` 才会执行这条 spec）
 - 从 IR 写出 spec：`pnpm idt:emit <ir路径>`（不需要安装 Playwright）
 - 自愈失败 spec：`pnpm idt:heal <spec路径>`
-- 同步拓扑与语义索引：`pnpm idt:sync`
+- 同步拓扑与语义索引：`pnpm idt:sync`（多项目宿主默认同步全部，`--project <name>` 只同步一个）
+- 列出发现到的 IDT 项目：`pnpm idt projects`
 - 运行端到端测试：`pnpm test:e2e`
 - 运行单元测试套件：`pnpm test:idt`（单测在 `tests/unit/`，不访问网络，也不启动浏览器）

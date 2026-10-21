@@ -523,4 +523,42 @@ describe('ir-compiler', () => {
     assert.match(IR_SYSTEM_PROMPT, /actions/);
     assert.match(IR_SYSTEM_PROMPT, /unresolved/);
   });
+  it('extracts the topology with the globs handed in by the caller', async () => {
+    const tmp = createTempDir();
+    try {
+      setupCartFixture(tmp);
+      // 项目根下没有 idt.config.ts —— 多项目模式里配置只在 IDT 根。
+      // 不把 globs 传进来，提取就会回落到默认值，扫不到 src/pages 以外的东西。
+      assert.equal(fs.existsSync(path.join(tmp, 'idt.config.ts')), false);
+
+      const model: ModelClient = {
+        async complete() {
+          return JSON.stringify(createValidModelIr());
+        },
+      };
+
+      const ir = await compileIntent({
+        projectRoot: tmp,
+        intent: '购物车去结算并支付成功',
+        model,
+        extract: {
+          config: {
+            pageGlobs: ['src/pages/**/*.{tsx,jsx,ts,js,vue}'],
+            routerGlobs: [],
+            localeFiles: [],
+          },
+          projectName: 'shop',
+        },
+      });
+
+      assert.equal(ir.initialRoute, '/cart');
+      const topo = JSON.parse(
+        fs.readFileSync(path.join(tmp, '.idt', 'topology.json'), 'utf8'),
+      );
+      assert.equal(topo.project, 'shop');
+      assert.ok(topo.routes['/cart'], 'the handed-in globs must be the ones used');
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
 });

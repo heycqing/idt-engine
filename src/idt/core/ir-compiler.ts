@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { extractProjectTopology, readSemanticIndex } from '../extract/topology.js';
+import {
+  extractProjectTopology,
+  readSemanticIndex,
+  type ExtractTopologyOptions,
+} from '../extract/topology.js';
 import { findRoutePath } from './pathfinder.js';
 import { flowIdFromIntent } from './intent.js';
 import {
@@ -66,15 +70,17 @@ export interface CompileIntentOptions {
   proseCase?: string;
   model: ModelClient;
   force?: boolean;
+  /** 多项目模式下项目根没有 idt.config.ts，globs 必须由调用方给。 */
+  extract?: ExtractTopologyOptions;
 }
 
 export async function compileIntent(
   options: CompileIntentOptions
 ): Promise<StateTransitionIR> {
-  const { projectRoot, intent, proseCase, model, force } = options;
+  const { projectRoot, intent, proseCase, model, force, extract } = options;
 
   // 1. Extract project topology and read semantic index
-  const topology = extractProjectTopology(projectRoot);
+  const topology = extractProjectTopology(projectRoot, extract);
   const semanticIndex = readSemanticIndex(projectRoot);
 
   // 2. Find route path

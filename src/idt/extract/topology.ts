@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Project, Node, SyntaxKind, type SourceFile } from 'ts-morph';
 import { loadIdtConfig } from '../config/load.js';
+import type { IdtConfig } from '../schemas/config.schema.js';
 import {
   toPosixPath,
   toRoutePattern,
@@ -142,8 +143,18 @@ function loadVuePages(project: Project, projectRoot: string, globs: string[]) {
   return pages;
 }
 
-export function extractProjectTopology(projectRoot: string): ProjectTopology {
-  const config = loadIdtConfig(projectRoot);
+export interface ExtractTopologyOptions {
+  /** 由多项目标志解析出来的 globs。不传就回落到 projectRoot 下的 idt.config.ts。 */
+  config?: IdtConfig;
+  /** 写进拓扑顶层的项目名，便于单看一份产物认出它属于谁。 */
+  projectName?: string;
+}
+
+export function extractProjectTopology(
+  projectRoot: string,
+  options: ExtractTopologyOptions = {},
+): ProjectTopology {
+  const config = options.config ?? loadIdtConfig(projectRoot);
 
   const project = new Project({
     compilerOptions: {
@@ -670,6 +681,7 @@ export function extractProjectTopology(projectRoot: string): ProjectTopology {
     version: '1.0.0',
     generatedAt,
     sourceDigest,
+    ...(options.projectName ? { project: options.projectName } : {}),
     routes,
   };
 
