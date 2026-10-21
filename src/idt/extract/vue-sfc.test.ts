@@ -67,4 +67,94 @@ describe('vue sfc', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+  it('maps tags to aria roles and drops tags outside the table', () => {
+    const scan = scanVueTemplate(`
+      <div>
+        <button>提交</button>
+        <van-button>撤单</van-button>
+        <div role="button">自定义按钮</div>
+        <span @click="onPick">可点文字</span>
+        <router-link to="/a">去 A</router-link>
+        <a href="/b">去 B</a>
+        <input type="text" placeholder="股票代码" />
+        <textarea placeholder="备注"></textarea>
+        <van-field label="委托数量" />
+        <input type="checkbox" aria-label="全选" />
+        <van-switch aria-label="自动续期" />
+        <input type="radio" aria-label="限价" />
+        <select aria-label="账户"></select>
+        <van-picker aria-label="到期日" />
+        <h2>持仓明细</h2>
+        <van-tab title="融资"></van-tab>
+        <p>这是一段说明文字</p>
+        <section>区块</section>
+      </div>
+    `);
+    const pairs = scan.elements.map((el) => `${el.role}:${el.name ?? ''}`);
+    assert.deepEqual(pairs, [
+      'button:提交',
+      'button:撤单',
+      'button:自定义按钮',
+      'button:可点文字',
+      'link:去 A',
+      'link:去 B',
+      'textbox:股票代码',
+      'textbox:备注',
+      'textbox:委托数量',
+      'checkbox:全选',
+      'checkbox:自动续期',
+      'radio:限价',
+      'combobox:账户',
+      'combobox:到期日',
+      'heading:持仓明细',
+      'tab:融资',
+    ]);
+  });
+
+  it('resolves the accessible name by source priority', () => {
+    const scan = scanVueTemplate(`
+      <div>
+        <button aria-label="关闭弹窗" title="标题属性">文字内容</button>
+        <van-field label="标签优先" placeholder="占位兜底" />
+        <input type="text" placeholder="只有占位" />
+        <button title="只有标题"></button>
+        <button>只有文字</button>
+      </div>
+    `);
+    assert.deepEqual(
+      scan.elements.map((el) => el.name),
+      ['关闭弹窗', '标签优先', '只有占位', '只有标题', '只有文字'],
+    );
+  });
+
+  it('marks interpolated and bound names as dynamic without inventing a name', () => {
+    const scan = scanVueTemplate(`
+      <div>
+        <button>{{ submitLabel }}</button>
+        <van-button :aria-label="closeLabel">x</van-button>
+        <van-field :placeholder="hint" />
+        <button>确定</button>
+      </div>
+    `);
+    assert.deepEqual(scan.elements, [
+      { role: 'button', dynamic: true, tag: 'button' },
+      { role: 'button', dynamic: true, tag: 'van-button' },
+      { role: 'textbox', dynamic: true, tag: 'van-field' },
+      { role: 'button', name: '确定' },
+    ]);
+  });
+
+  it('deduplicates elements that share both role and name', () => {
+    const scan = scanVueTemplate(`
+      <div>
+        <button>买入</button>
+        <van-button>买入</van-button>
+        <a href="/x">买入</a>
+      </div>
+    `);
+    assert.deepEqual(scan.elements, [
+      { role: 'button', name: '买入' },
+      { role: 'link', name: '买入' },
+    ]);
+  });
 });

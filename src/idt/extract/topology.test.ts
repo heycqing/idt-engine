@@ -733,4 +733,68 @@ ${paddingLines}
       removeTempDir(tmp);
     }
   });
+  it('writes the interactable element inventory onto each route node', () => {
+    const tmp = createTempDir();
+    try {
+      writeFile(
+        tmp,
+        'idt.config.ts',
+        `export default { pageGlobs: ['src/views/**/*.vue'], localeFiles: [] };
+`,
+      );
+      writeFile(
+        tmp,
+        'src/views/buy/index.vue',
+        `
+        <template>
+          <div>
+            <h2>融资买入</h2>
+            <van-field label="股票代码" />
+            <input type="text" placeholder="买入数量" />
+            <van-button>买入</van-button>
+            <van-button>{{ dynamicLabel }}</van-button>
+            <p>仅供参考</p>
+          </div>
+        </template>
+        `,
+      );
+
+      const topo = extractProjectTopology(tmp);
+      const node = topo.routes['/buy'];
+
+      assert.deepEqual(node.elements, [
+        { role: 'heading', name: '融资买入' },
+        { role: 'textbox', name: '股票代码' },
+        { role: 'textbox', name: '买入数量' },
+        { role: 'button', name: '买入' },
+        { role: 'button', dynamic: true, tag: 'van-button' },
+      ]);
+      assert.equal(ProjectTopologySchema.safeParse(topo).success, true);
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
+  it('accepts a topology written before the elements field existed', () => {
+    const legacy = {
+      version: '1.0.0',
+      generatedAt: '2026-10-01T00:00:00.000Z',
+      sourceDigest: 'a'.repeat(64),
+      routes: {
+        '/buy': {
+          path: '/buy',
+          filePath: 'src/views/buy/index.vue',
+          title: 'index',
+          semanticKeywords: ['买入'],
+          dynamicParams: [],
+          transitions: [],
+        },
+      },
+    };
+    const parsed = ProjectTopologySchema.safeParse(legacy);
+    assert.equal(parsed.success, true);
+    if (parsed.success) {
+      assert.deepEqual(parsed.data.routes['/buy'].elements, []);
+    }
+  });
 });

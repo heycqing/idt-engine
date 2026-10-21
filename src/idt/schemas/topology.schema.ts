@@ -7,6 +7,22 @@ export const RouteTransitionSchema = z.object({
   codeSlice: z.string(),
 });
 
+export const PageElementSchema = z.object({
+  role: z.enum([
+    'button',
+    'link',
+    'textbox',
+    'checkbox',
+    'radio',
+    'combobox',
+    'heading',
+    'tab',
+  ]),
+  name: z.string().min(1).optional(),
+  dynamic: z.literal(true).optional(),
+  tag: z.string().min(1).optional(),
+});
+
 export const RouteTopologyNodeSchema = z.object({
   path: z.string().min(1),
   filePath: z.string().min(1),
@@ -14,6 +30,8 @@ export const RouteTopologyNodeSchema = z.object({
   semanticKeywords: z.array(z.string()),
   dynamicParams: z.array(z.string()),
   transitions: z.array(RouteTransitionSchema),
+  // 可选：拓扑生成于本字段之前的宿主读进来是空数组，产物不作废。
+  elements: z.array(PageElementSchema).default([]),
 });
 
 export const ProjectTopologySchema = z.object({
@@ -35,6 +53,7 @@ export const SemanticIndexSchema = z.object({
   entries: z.array(SemanticIndexEntrySchema),
 });
 
+export type PageElement = z.infer<typeof PageElementSchema>;
 export type RouteTransition = z.infer<typeof RouteTransitionSchema>;
 export type RouteTopologyNode = z.infer<typeof RouteTopologyNodeSchema>;
 export type ProjectTopology = z.infer<typeof ProjectTopologySchema>;

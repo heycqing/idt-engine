@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { compileIntent, type ModelClient } from './ir-compiler.js';
+import { compileIntent, IR_SYSTEM_PROMPT, type ModelClient } from './ir-compiler.js';
 import { flowIdFromIntent } from './intent.js';
 import { OpenAiClient } from './openai-client.js';
 
@@ -397,5 +397,130 @@ describe('ir-compiler', () => {
       combinedOutput.includes('OPENAI_API_KEY'),
       `Output should contain OPENAI_API_KEY, got: ${combinedOutput}`
     );
+  });
+  it('injects flowId, intent and oracle before schema validation', async () => {
+    const tmp = createTempDir();
+    try {
+      setupCartFixture(tmp);
+
+      // The model omits the three engine-authored fields entirely. flowId is a
+      // hash of the intent, so no model can produce it; requiring it before the
+      // overwrite made every response invalid.
+      const modelIr: any = createValidModelIr();
+      delete modelIr.flowId;
+      delete modelIr.intent;
+      delete modelIr.oracle;
+
+      let callCount = 0;
+      const model: ModelClient = {
+        async complete() {
+          callCount += 1;
+          return JSON.stringify(modelIr);
+        },
+      };
+
+      const intent = '购物车去结算并支付成功';
+      const ir = await compileIntent({ projectRoot: tmp, intent, model });
+
+      assert.equal(callCount, 1, 'must validate on the first response, not retry');
+      assert.equal(ir.flowId, flowIdFromIntent(intent));
+      assert.equal(ir.intent, intent);
+      assert.equal(ir.oracle, 'regression-lock');
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
+  it('ignores the values the model supplies for the engine-authored fields', async () => {
+    const tmp = createTempDir();
+    try {
+      setupCartFixture(tmp);
+
+      const modelIr: any = createValidModelIr('flow_abcdef0123');
+      modelIr.intent = '模型瞎写的意图';
+      modelIr.oracle = 'prose-case';
+
+      const model: ModelClient = {
+        async complete() {
+          return JSON.stringify(modelIr);
+        },
+      };
+
+      const intent = '购物车去结算并支付成功';
+      const ir = await compileIntent({ projectRoot: tmp, intent, model });
+
+      assert.equal(ir.flowId, flowIdFromIntent(intent));
+      assert.notEqual(ir.flowId, 'flow_abcdef0123');
+      assert.equal(ir.intent, intent);
+      assert.equal(ir.oracle, 'regression-lock');
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
+  it('still rejects a response whose stages are empty', async () => {
+    const tmp = createTempDir();
+    try {
+      setupCartFixture(tmp);
+
+      const modelIr: any = createValidModelIr();
+      modelIr.stages = [];
+
+      const model: ModelClient = {
+        async complete() {
+          return JSON.stringify(modelIr);
+        },
+      };
+
+      await assert.rejects(
+        compileIntent({ projectRoot: tmp, intent: '购物车去结算并支付成功', model }),
+        /IR compilation failed/,
+      );
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+  it('puts the routeFlow pages and their elements into the payload', async () => {
+    const tmp = createTempDir();
+    try {
+      setupCartFixture(tmp);
+
+      let captured = '';
+      const model: ModelClient = {
+        async complete(req) {
+          captured = req.messages[0].content;
+          return JSON.stringify(createValidModelIr());
+        },
+      };
+
+      await compileIntent({ projectRoot: tmp, intent: '购物车去结算并支付成功', model });
+
+      const payload = JSON.parse(captured);
+      assert.ok(Array.isArray(payload.pages), 'payload must carry pages');
+      assert.deepEqual(
+        payload.pages.map((page: any) => page.route),
+        payload.routeFlow,
+        'pages must cover exactly the routeFlow, in order',
+      );
+      for (const page of payload.pages) {
+        assert.ok('title' in page && 'semanticKeywords' in page && 'elements' in page);
+      }
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
+  it('tells the model which fields the engine authors and how to shape a stage', () => {
+    assert.match(IR_SYSTEM_PROMPT, /flowId/);
+    assert.match(IR_SYSTEM_PROMPT, /targetRole/);
+    for (const role of ['button', 'link', 'textbox', 'checkbox', 'radio', 'combobox', 'heading', 'tab']) {
+      assert.ok(IR_SYSTEM_PROMPT.includes(role), `prompt must list role ${role}`);
+    }
+    for (const action of ['CLICK', 'FILL', 'SELECT', 'CHECK']) {
+      assert.ok(IR_SYSTEM_PROMPT.includes(action), `prompt must list action ${action}`);
+    }
+    // 纯导航用例必须是合法形态，否则 90 条无出边路由永远产不出 spec
+    assert.match(IR_SYSTEM_PROMPT, /actions/);
+    assert.match(IR_SYSTEM_PROMPT, /unresolved/);
   });
 });

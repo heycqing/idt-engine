@@ -647,6 +647,7 @@ export function extractProjectTopology(projectRoot: string): ProjectTopology {
         semanticKeywords: Array.from(new Set(routeKeywords)),
         dynamicParams: extractDynamicParams(pattern),
         transitions: transitions.map((transition) => ({ ...transition })),
+        elements: (item.vue?.elements ?? []).map((element) => ({ ...element })),
       };
     }
   }

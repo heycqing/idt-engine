@@ -14,11 +14,43 @@ export { type ModelClient } from './openai-client.js';
 
 export const IR_SYSTEM_PROMPT = `You are a frontend testing and state transition compiler.
 Your task is to generate a StateTransitionIR JSON object matching the StateTransitionIRSchema.
+
+Shape:
+{
+  "description": string,
+  "initialRoute": string,            // must be the first entry of routeFlow
+  "setup": { "notes": string[] },
+  "unresolved": string[],
+  "stages": [                        // at least one
+    {
+      "stageIndex": number,          // 0-based, matches array position
+      "stageName": string,
+      "routePattern": string,        // must come from routeFlow
+      "actions": [
+        {
+          "actionType": "CLICK" | "FILL" | "SELECT" | "CHECK",
+          "targetRole": "button" | "link" | "textbox" | "checkbox" | "radio" | "combobox" | "heading" | "tab",
+          "targetName": string,
+          "inputValue": string,      // FILL and SELECT only
+          "triggersRequest": boolean
+        }
+      ],
+      "invariants": {
+        "network": [ { "method": "GET"|"POST"|"PUT"|"DELETE"|"PATCH", "urlPattern": string, "expectedStatus": number } ],
+        "routeGuard": { "targetUrlPattern": string, "readyRole": string, "readyName": string }
+      }
+    }
+  ]
+}
+
 Requirements:
 1. Output ONLY a valid JSON object. No markdown fences, no explanations.
-2. Element targetRole and targetName must strictly come from the provided code slices or prose case.
-3. Network invariant method, urlPattern, expectedStatus, and assertResponseFields must strictly come from code slices or prose case assertions.
-4. If any action, prerequisite, or step cannot be determined from the slices or prose case, put a description in the "unresolved" array. DO NOT invent or guess actions.
+2. DO NOT output flowId, intent or oracle. The engine fills those in; anything you write there is discarded.
+3. Every targetRole and targetName pair must come from the "elements" list of the matching page in the payload, or from the provided code slices or prose case. The elements list is a static candidate set, not a guarantee; never invent a name that is not in it.
+4. An element with "dynamic": true has a name that is only known at runtime. Do not guess it.
+5. Network invariant method, urlPattern, expectedStatus, and assertResponseFields must strictly come from code slices or prose case assertions.
+6. An intent that only opens a page is one stage with an empty "actions" array, asserted through invariants.routeGuard with readyRole and readyName taken from a heading in the elements list. This is valid output. An empty elements list or absent code slices is NOT a reason to return zero stages.
+7. "unresolved" is only for operations the intent asks for but the payload cannot support: a required control missing from the elements list, a value with no matching input, or a name that is dynamic. Never put complaints about the payload itself (such as missing code slices) in it. A non-empty "unresolved" blocks spec emission, so leave it empty when the flow is fully determined.
 `;
 
 export function redactSecrets(text: string): string {
@@ -87,11 +119,26 @@ export async function compileIntent(
     }
   }
 
+  // 按 routeFlow 顺序给出页面，不把整张拓扑塞进上下文。
+  const pages = routePath.map((route) => {
+    const node = topology.routes[route];
+    return {
+      route,
+      title: node?.title ?? '',
+      semanticKeywords: node?.semanticKeywords ?? [],
+      elements: (node?.elements ?? []).map((element) => ({
+        ...element,
+        ...(element.name ? { name: redactSecrets(element.name) } : {}),
+      })),
+    };
+  });
+
   const userPayload = {
     intent,
     proseCase: processedProse,
     proseCaseTruncated,
     routeFlow: routePath,
+    pages,
     slices,
   };
   const userContent = JSON.stringify(userPayload);
@@ -118,6 +165,15 @@ export async function compileIntent(
     } catch (err: any) {
       return { ir: null, error: `JSON parse error: ${err.message}` };
     }
+
+    // flowId、intent 和 oracle 由引擎决定，模型写什么都会被覆盖。校验必须在
+    // 覆盖之后进行：flowId 是 intent 的哈希，模型猜不中，先校验等于每次必败。
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      parsed.flowId = flowId;
+      parsed.intent = intent;
+      parsed.oracle = proseCase ? 'prose-case' : 'regression-lock';
+    }
+
     const zodRes = StateTransitionIRSchema.safeParse(parsed);
     if (!zodRes.success) {
       return {
@@ -161,11 +217,8 @@ export async function compileIntent(
     throw compileError;
   }
 
-  // 6. Overwrite flowId and oracle, then validateIr
+  // 6. validateIr（flowId / intent / oracle 已在 parseAndValidate 里注入）
   const ir = result.ir;
-  ir.flowId = flowId;
-  ir.intent = intent;
-  ir.oracle = proseCase ? 'prose-case' : 'regression-lock';
 
   validateIr(ir, {
     projectRoot,

@@ -174,6 +174,7 @@ describe('pathfinder', () => {
           filePath: 'src/pages/start.tsx',
           title: 'start',
           semanticKeywords: ['起点'],
+          elements: [],
           dynamicParams: [],
           transitions: [
             {
@@ -193,6 +194,7 @@ describe('pathfinder', () => {
           filePath: 'src/pages/a.tsx',
           title: 'a',
           semanticKeywords: [],
+          elements: [],
           dynamicParams: [],
           transitions: [
             {
@@ -207,6 +209,7 @@ describe('pathfinder', () => {
           filePath: 'src/pages/b.tsx',
           title: 'b',
           semanticKeywords: [],
+          elements: [],
           dynamicParams: [],
           transitions: [
             {
@@ -221,6 +224,7 @@ describe('pathfinder', () => {
           filePath: 'src/pages/end.tsx',
           title: 'end',
           semanticKeywords: ['终点'],
+          elements: [],
           dynamicParams: [],
           transitions: [],
         },
@@ -253,6 +257,7 @@ describe('pathfinder', () => {
           filePath: 'src/pages/goods/index.tsx',
           title: 'goods',
           semanticKeywords: ['商品列表'],
+          elements: [],
           dynamicParams: [],
           transitions: [
             {
@@ -267,6 +272,7 @@ describe('pathfinder', () => {
           filePath: 'src/pages/goods/[id].tsx',
           title: 'goods-detail',
           semanticKeywords: ['商品详情'],
+          elements: [],
           dynamicParams: ['id'],
           transitions: [],
         },

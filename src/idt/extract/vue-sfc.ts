@@ -19,11 +19,30 @@ export type VueLink = {
   text?: string;
 };
 
+export type ElementRole =
+  | 'button'
+  | 'link'
+  | 'textbox'
+  | 'checkbox'
+  | 'radio'
+  | 'combobox'
+  | 'heading'
+  | 'tab';
+
+/** 可交互元素候选。name 缺失且 dynamic 为真时，名称要到运行期才定。 */
+export type PageElement = {
+  role: ElementRole;
+  name?: string;
+  dynamic?: true;
+  tag?: string;
+};
+
 export type VueTemplateScan = {
   texts: string[];
   i18nKeys: string[];
   links: VueLink[];
   clicks: Map<string, string | undefined>;
+  elements: PageElement[];
 };
 
 type Attr = { name: string; value: string | null };
@@ -33,7 +52,46 @@ type Frame = {
   texts: string[];
   target?: string;
   handler?: string;
+  attrs: Attr[];
+  role?: ElementRole;
+  interpolated?: boolean;
 };
+
+// 标签到 ARIA role 的映射。宿主换组件库时只改这张表。
+const TAG_ROLES: Record<string, ElementRole> = {
+  button: 'button',
+  'van-button': 'button',
+  'router-link': 'link',
+  a: 'link',
+  textarea: 'textbox',
+  'van-field': 'textbox',
+  'van-checkbox': 'checkbox',
+  'van-switch': 'checkbox',
+  'van-radio': 'radio',
+  select: 'combobox',
+  'van-picker': 'combobox',
+  'van-dropdown-item': 'combobox',
+  h1: 'heading',
+  h2: 'heading',
+  h3: 'heading',
+  h4: 'heading',
+  h5: 'heading',
+  h6: 'heading',
+  'van-nav-bar': 'heading',
+  'van-tab': 'tab',
+};
+
+const INPUT_TYPE_ROLES: Record<string, ElementRole> = {
+  text: 'textbox',
+  number: 'textbox',
+  tel: 'textbox',
+  password: 'textbox',
+  search: 'textbox',
+  checkbox: 'checkbox',
+  radio: 'radio',
+};
+
+const NAME_ATTRS = ['aria-label', 'label', 'placeholder', 'title'];
 
 export function stripVueFromGlob(glob: string): string | null {
   const clean = glob.replace(/^\.\//, '');
@@ -71,6 +129,7 @@ export function scanVueTemplate(template: string): VueTemplateScan {
   const i18nKeys = collectI18nKeys(source);
   const links: VueLink[] = [];
   const clicks = new Map<string, string | undefined>();
+  const elements: PageElement[] = [];
   const stack: Frame[] = [];
   let i = 0;
 
@@ -78,7 +137,11 @@ export function scanVueTemplate(template: string): VueTemplateScan {
     if (source[i] !== '<') {
       const start = i;
       while (i < source.length && source[i] !== '<') i += 1;
-      const visible = visibleText(source.slice(start, i));
+      const raw = source.slice(start, i);
+      if (/\{\{[\s\S]*?\}\}/.test(raw)) {
+        for (const frame of stack) frame.interpolated = true;
+      }
+      const visible = visibleText(raw);
       if (visible) {
         texts.push(visible);
         for (const frame of stack) frame.texts.push(visible);
@@ -96,7 +159,7 @@ export function scanVueTemplate(template: string): VueTemplateScan {
       const name = close[1].toLowerCase();
       while (stack.length > 0) {
         const frame = stack.pop()!;
-        finishFrame(frame, links, clicks);
+        finishFrame(frame, links, clicks, elements);
         if (frame.name === name) break;
       }
       continue;
@@ -110,13 +173,15 @@ export function scanVueTemplate(template: string): VueTemplateScan {
     i = open.end;
     const frame = classifyTag(open.name, open.attrs);
     if (open.selfClosing) {
-      finishFrame(frame, links, clicks);
+      finishFrame(frame, links, clicks, elements);
     } else {
       stack.push(frame);
     }
   }
 
-  return { texts, i18nKeys, links, clicks };
+  while (stack.length > 0) finishFrame(stack.pop()!, links, clicks, elements);
+
+  return { texts, i18nKeys, links, clicks, elements: dedupeElements(elements) };
 }
 
 export function listVueFiles(projectRoot: string, globs: string[]): string[] {
@@ -260,9 +325,92 @@ function parseAttrs(raw: string): Attr[] {
   return attrs;
 }
 
+const ALLOWED_ROLES = new Set<string>([
+  'button',
+  'link',
+  'textbox',
+  'checkbox',
+  'radio',
+  'combobox',
+  'heading',
+  'tab',
+]);
+
+function isElementRole(value: string): value is ElementRole {
+  return ALLOWED_ROLES.has(value);
+}
+
+function literalAttr(attrs: Attr[], name: string): string | null {
+  const hit = attrs.find((attr) => attr.name.toLowerCase() === name);
+  return hit?.value && hit.value.trim().length > 0 ? hit.value.trim() : null;
+}
+
+function hasBoundAttr(attrs: Attr[], name: string): boolean {
+  return attrs.some((attr) => {
+    const lower = attr.name.toLowerCase();
+    return lower === `:${name}` || lower === `v-bind:${name}`;
+  });
+}
+
+function roleOf(tag: string, attrs: Attr[]): ElementRole | undefined {
+  const explicit = literalAttr(attrs, 'role');
+  if (explicit && isElementRole(explicit)) return explicit;
+
+  if (tag === 'input') {
+    const type = (literalAttr(attrs, 'type') ?? 'text').toLowerCase();
+    if (type === 'submit' || type === 'button') return 'button';
+    return INPUT_TYPE_ROLES[type];
+  }
+
+  if (tag === 'a') {
+    const linked =
+      literalAttr(attrs, 'href') !== null ||
+      literalAttr(attrs, 'to') !== null ||
+      hasBoundAttr(attrs, 'to') ||
+      hasBoundAttr(attrs, 'href');
+    return linked ? 'link' : undefined;
+  }
+
+  const mapped = TAG_ROLES[tag];
+  if (mapped) return mapped;
+
+  return attrs.some((attr) => isClickAttr(attr.name)) ? 'button' : undefined;
+}
+
+/** 名称取值顺序：aria-label → label → placeholder → 帧内可见文本 → title。 */
+function elementOf(frame: Frame): PageElement | null {
+  if (!frame.role) return null;
+
+  for (const attr of NAME_ATTRS) {
+    if (attr === 'title') break;
+    const literal = literalAttr(frame.attrs, attr);
+    if (literal) return { role: frame.role, name: literal };
+    if (hasBoundAttr(frame.attrs, attr)) {
+      return { role: frame.role, dynamic: true, tag: frame.name };
+    }
+  }
+
+  const text = frame.texts.join(' ').trim();
+  if (text.length > 0) return { role: frame.role, name: text };
+
+  const title = literalAttr(frame.attrs, 'title');
+  if (title) return { role: frame.role, name: title };
+  if (hasBoundAttr(frame.attrs, 'title')) {
+    return { role: frame.role, dynamic: true, tag: frame.name };
+  }
+
+  return { role: frame.role, dynamic: true, tag: frame.name };
+}
+
 function classifyTag(name: string, attrs: Attr[]): Frame {
   const lower = name.toLowerCase();
-  const frame: Frame = { name: lower, kind: 'other', texts: [] };
+  const frame: Frame = {
+    name: lower,
+    kind: 'other',
+    texts: [],
+    attrs,
+    role: roleOf(lower, attrs),
+  };
   if (lower === 'router-link') {
     const to = attrs.find((attr) => isToAttr(attr.name));
     const target = to?.value == null ? null : routeFromAttr(to.name, to.value);
@@ -286,7 +434,12 @@ function classifyTag(name: string, attrs: Attr[]): Frame {
   return frame;
 }
 
-function finishFrame(frame: Frame, links: VueLink[], clicks: Map<string, string | undefined>): void {
+function finishFrame(
+  frame: Frame,
+  links: VueLink[],
+  clicks: Map<string, string | undefined>,
+  elements?: PageElement[],
+): void {
   const text = frame.texts.join(' ').trim();
   const triggerText = text.length > 0 ? text : undefined;
   if (frame.kind === 'link' && frame.target) {
@@ -295,6 +448,25 @@ function finishFrame(frame: Frame, links: VueLink[], clicks: Map<string, string 
   if (frame.kind === 'click' && frame.handler && !clicks.has(frame.handler)) {
     clicks.set(frame.handler, triggerText);
   }
+  if (elements) {
+    const element = elementOf(frame);
+    if (element) elements.push(element);
+  }
+}
+
+function dedupeElements(elements: PageElement[]): PageElement[] {
+  const seen = new Set<string>();
+  const out: PageElement[] = [];
+  for (const element of elements) {
+    const key =
+      element.name !== undefined
+        ? `${element.role}|${element.name}`
+        : `${element.role}| ${element.tag ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(element);
+  }
+  return out;
 }
 
 function isToAttr(name: string): boolean {
