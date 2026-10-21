@@ -24,17 +24,20 @@ export function runCommand(
   options?: { cwd?: string; env?: NodeJS.ProcessEnv },
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const isWin = process.platform === 'win32';
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       ...(options?.env ?? {}),
       FORCE_COLOR: '0',
     };
 
+    // 只有要靠 PATH 找的命令（pnpm 之类）才需要 Windows 的 shell。
+    // 命令本身是绝对路径时走 shell 反而会因为引号/反斜杠处理失败（ENOENT）。
+    const needsShell = process.platform === 'win32' && !path.isAbsolute(command);
+
     const child = spawn(command, args, {
       cwd: options?.cwd,
       env,
-      shell: isWin,
+      shell: needsShell,
     });
 
     let stdout = '';
@@ -124,11 +127,21 @@ export async function runPlaywrightSpec(
     fs.mkdirSync(idtDir, { recursive: true });
   }
 
-  const invocation = playwrightTestInvocation(specPath, projectRoot);
+  // Playwright 把位置参数当正则匹配文件路径，绝对 Windows 路径里的反斜杠和
+  // 冒号不是合法正则，会匹配不到任何文件（报 No tests found）。
+  const relativeSpec = path
+    .relative(projectRoot, path.resolve(projectRoot, specPath))
+    .split(path.sep)
+    .join('/');
+
+  const invocation = playwrightTestInvocation(relativeSpec, projectRoot);
+  // 必须是绝对路径：生成的 Playwright 配置就放在 .idt/ 下，相对路径会被按
+  // 配置文件所在目录解析，报告会落进 .idt/.idt/ 而读不回来。
+  const reportPath = path.resolve(projectRoot, '.idt', 'last-report.json');
   const spawnEnv: NodeJS.ProcessEnv = {
     ...process.env,
     FORCE_COLOR: '0',
-    PLAYWRIGHT_JSON_OUTPUT_NAME: '.idt/last-report.json',
+    PLAYWRIGHT_JSON_OUTPUT_NAME: reportPath,
   };
 
   const result = await spawnImpl(invocation.command, invocation.args, {
@@ -136,7 +149,6 @@ export async function runPlaywrightSpec(
     env: spawnEnv,
   });
 
-  const reportPath = path.resolve(projectRoot, '.idt/last-report.json');
   if (!fs.existsSync(reportPath)) {
     return {
       exitCode: result.exitCode,

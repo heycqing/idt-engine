@@ -199,6 +199,8 @@ export interface HealResult {
   exitCode: number;
   replaced?: boolean;
   newTargetName?: string;
+  /** 失败原因。每个失败分支都带上，否则调用方只看到一个退出码。 */
+  reason?: string;
 }
 
 function atomicWrite(targetPath: string, content: string): void {
@@ -216,7 +218,7 @@ export async function heal(options: HealOptions): Promise<HealResult> {
     : path.resolve(options.projectRoot, options.specPath);
 
   if (!resolvedSpecPath.endsWith('.spec.ts')) {
-    return { exitCode: 2 };
+    return { exitCode: 2, reason: `不是 .spec.ts 文件：${resolvedSpecPath}` };
   }
 
   const specDir = path.dirname(resolvedSpecPath);
@@ -225,7 +227,7 @@ export async function heal(options: HealOptions): Promise<HealResult> {
   const irPath = path.join(specDir, `${fileStem}.ir.json`);
 
   if (!fs.existsSync(resolvedSpecPath) || !fs.existsSync(irPath)) {
-    return { exitCode: 2 };
+    return { exitCode: 2, reason: `spec 或同名 .ir.json 不存在：${resolvedSpecPath}` };
   }
 
   let originalSpecContent: string;
@@ -234,14 +236,14 @@ export async function heal(options: HealOptions): Promise<HealResult> {
     originalSpecContent = fs.readFileSync(resolvedSpecPath, 'utf8');
     originalIrContent = fs.readFileSync(irPath, 'utf8');
   } catch {
-    return { exitCode: 2 };
+    return { exitCode: 2, reason: '读取 spec 或 IR 失败' };
   }
 
   let ir: StateTransitionIR;
   try {
     ir = JSON.parse(originalIrContent);
   } catch {
-    return { exitCode: 2 };
+    return { exitCode: 2, reason: 'IR 不是合法 JSON' };
   }
 
   const runSpecImpl =
@@ -260,12 +262,12 @@ export async function heal(options: HealOptions): Promise<HealResult> {
 
   // 3. Locate failure and heal target
   if (!firstRun.report) {
-    return { exitCode: 2 };
+    return { exitCode: 2, reason: '没有拿到 Playwright 的 JSON 报告' };
   }
 
   const failure = firstFailure(firstRun.report);
   if (!failure) {
-    return { exitCode: 2 };
+    return { exitCode: 2, reason: '报告里没有失败用例，无从自愈' };
   }
 
   let target: {
@@ -276,8 +278,11 @@ export async function heal(options: HealOptions): Promise<HealResult> {
   };
   try {
     target = locateHealTarget(originalSpecContent, ir, failure);
-  } catch {
-    return { exitCode: 2 };
+  } catch (err: any) {
+    return {
+      exitCode: 2,
+      reason: `定位不到可自愈的目标：${err?.message ?? err}`,
+    };
   }
 
   // 4. Replay
@@ -295,8 +300,8 @@ export async function heal(options: HealOptions): Promise<HealResult> {
   let snapshot: string;
   try {
     snapshot = await replayImpl(ir, target);
-  } catch {
-    return { exitCode: 2 };
+  } catch (err: any) {
+    return { exitCode: 2, reason: `重放取 aria 快照失败：${err?.message ?? err}` };
   }
 
   // 5. Parse aria snapshot and choose replacement
@@ -307,7 +312,12 @@ export async function heal(options: HealOptions): Promise<HealResult> {
 
   const choice = chooseReplacement(target.name, candidateNames);
   if (!choice.ok) {
-    return { exitCode: 2 };
+    return {
+      exitCode: 2,
+      reason:
+        `aria 快照里没有足够接近 "${target.name}" 的 ${target.role}。` +
+        `候选：${candidateNames.length ? candidateNames.join(' / ') : '（无）'}`,
+    };
   }
 
   // 6. Update targetName in IR and re-emit spec
@@ -317,9 +327,10 @@ export async function heal(options: HealOptions): Promise<HealResult> {
 
   let newSpecContent: string;
   try {
-    newSpecContent = emitSpec(updatedIr);
-  } catch {
-    return { exitCode: 2 };
+    // 必须带上路由模式，否则自愈会把 hash 地址重写成 history
+    newSpecContent = emitSpec(updatedIr, readRouterOptions(options.projectRoot));
+  } catch (err: any) {
+    return { exitCode: 2, reason: `重新生成 spec 失败：${err?.message ?? err}` };
   }
 
   const updatedIrJson = JSON.stringify(updatedIr, null, 2) + '\n';
@@ -339,5 +350,8 @@ export async function heal(options: HealOptions): Promise<HealResult> {
   // 8. Re-run failed: revert to original bytes
   atomicWrite(irPath, originalIrContent);
   atomicWrite(resolvedSpecPath, originalSpecContent);
-  return { exitCode: 1 };
+  return {
+    exitCode: 1,
+    reason: `换成 "${choice.name}" 后重跑仍然失败，已回滚到原始内容`,
+  };
 }

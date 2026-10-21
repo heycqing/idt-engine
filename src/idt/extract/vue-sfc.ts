@@ -371,11 +371,12 @@ function roleOf(tag: string, attrs: Attr[]): ElementRole | undefined {
     return linked ? 'link' : undefined;
   }
 
-  const mapped = TAG_ROLES[tag];
-  if (mapped) return mapped;
-
-  return attrs.some((attr) => isClickAttr(attr.name)) ? 'button' : undefined;
+  return TAG_ROLES[tag];
 }
+
+// 曾经把「带 @click 的 div/span」也算成 button，这是错的：真实无障碍树里它们
+// 只是 text，getByRole('button') 永远定位不到，而 heal 只在同 role 内换名字，
+// role 错了救不回来。只有真的渲染成 button 的标签和显式 role 才进清单。
 
 /** 名称取值顺序：aria-label → label → placeholder → 帧内可见文本 → title。 */
 function elementOf(frame: Frame): PageElement | null {

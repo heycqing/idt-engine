@@ -180,9 +180,7 @@ program
         }
         process.exit(0);
       } else {
-        if (result.exitCode === 2) {
-          console.error('Heal failed with exit code 2');
-        }
+        console.error(`Heal failed: ${result.reason ?? `exit code ${result.exitCode}`}`);
         process.exit(result.exitCode);
       }
     } catch (err: any) {

@@ -52,7 +52,7 @@
 
 | 来源 | role |
 | --- | --- |
-| `<button>`、`<van-button>`、`role="button"`、带 `@click` 的 `div`/`span` | `button` |
+| `<button>`、`<van-button>`、`role="button"` | `button` |
 | `<router-link>`、`<a>` 带 `href` 或 `to` | `link` |
 | `<input>` 的 `text`/`number`/`tel`/`password`/`search`、`<textarea>`、`<van-field>` | `textbox` |
 | `<input type="checkbox">`、`<van-checkbox>`、`<van-switch>` | `checkbox` |
@@ -70,6 +70,12 @@
 值里含 `{{ }}` 插值或绑定前缀（`:`、`v-bind:`）的，名称判定为动态。动态元素仍然进清单，但带 `dynamic: true` 且不给 `name`。模型据此知道"这里有个按钮但名字运行时才定"，可以写进 `unresolved` 而不是瞎编一个名字。
 
 同一路由内 role 与 name 都相同的元素去重，保留第一个。
+
+**实施后的修订（2026-10-21，真实宿主实测）**：原表里把「带 `@click` 的 `div`/`span`」也映射成 `button`，这是错的。财达登录页的"去登录""立即登录"都是这种写法，Playwright 的 aria 快照里它们只是 `text`，没有 `button` role，`getByRole('button')` 永远定位不到。
+
+更关键的是 **heal 救不了这一类**：自愈只在同一个 role 内部换 `targetName`，role 本身错了就没有候选可选（实测报「aria 快照里没有足够接近 X 的 button。候选：（无）」）。
+
+已去掉这条推断，只有真的渲染成 `button` 的标签和显式 `role="button"` 才进清单。财达的元素总数因此从 206 收缩到 67，但剩下的每一个都能被 `getByRole` 定位。可点 `div` 需要 `getByText` 这类定位方式，而 `TargetRoleSchema` 只有八个 ARIA role，装不下——这是后续的设计问题，记在这里。
 
 ### 这是候选，不是保证
 

@@ -73,7 +73,7 @@ describe('vue sfc', () => {
         <button>提交</button>
         <van-button>撤单</van-button>
         <div role="button">自定义按钮</div>
-        <span @click="onPick">可点文字</span>
+        <span @click="onPick">可点文字但不是 button</span>
         <router-link to="/a">去 A</router-link>
         <a href="/b">去 B</a>
         <input type="text" placeholder="股票代码" />
@@ -95,7 +95,6 @@ describe('vue sfc', () => {
       'button:提交',
       'button:撤单',
       'button:自定义按钮',
-      'button:可点文字',
       'link:去 A',
       'link:去 B',
       'textbox:股票代码',

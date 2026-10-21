@@ -13,10 +13,8 @@ import {
 
 describe('runner', () => {
   it('runCommand captures stdout, stderr and exitCode accurately', async () => {
-    const code =
-      process.platform === 'win32'
-        ? '"process.stdout.write(\\"out\\"); process.stderr.write(\\"err\\"); process.exit(3);"'
-        : 'process.stdout.write("out"); process.stderr.write("err"); process.exit(3);';
+    // 命令是绝对路径时不再经过 Windows shell，参数原样传递，两个平台写法一致
+    const code = 'process.stdout.write("out"); process.stderr.write("err"); process.exit(3);';
     const result = await runCommand(process.execPath, ['-e', code]);
     assert.equal(result.exitCode, 3);
     assert.ok(result.stdout.includes('out'));
@@ -25,10 +23,7 @@ describe('runner', () => {
   });
 
   it('runCommand ensures FORCE_COLOR is set to 0 in environment', async () => {
-    const code =
-      process.platform === 'win32'
-        ? '"process.stdout.write(process.env.FORCE_COLOR || \\"\\");"'
-        : 'process.stdout.write(process.env.FORCE_COLOR || "");';
+    const code = 'process.stdout.write(process.env.FORCE_COLOR || "");';
     const result = await runCommand(process.execPath, ['-e', code], {
       env: { FORCE_COLOR: '1' },
     });
@@ -105,7 +100,7 @@ describe('runner', () => {
       assert.equal(recordedCwd, tempDir);
       assert.equal(
         recordedEnv?.PLAYWRIGHT_JSON_OUTPUT_NAME,
-        '.idt/last-report.json',
+        path.resolve(tempDir, '.idt', 'last-report.json'),
       );
       assert.equal(recordedEnv?.FORCE_COLOR, '0');
       assert.equal(res.exitCode, 0);
@@ -195,6 +190,82 @@ describe('runner', () => {
     try {
       assert.equal(playwrightCliEntry(tempDir), null);
       assert.equal(playwrightTestInvocation('a.spec.ts', tempDir).command, 'pnpm');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+  it('points the json report at an absolute path under the project root', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'idt-runner-report-'));
+    try {
+      const expected = path.resolve(tempDir, '.idt', 'last-report.json');
+      let recordedEnv: NodeJS.ProcessEnv = {};
+
+      await runPlaywrightSpec(
+        'tests/e2e/a.spec.ts',
+        tempDir,
+        async (_command, _args, options) => {
+          recordedEnv = options?.env ?? {};
+          // 模拟 Playwright 按绝对路径写出报告
+          fs.writeFileSync(
+            String(recordedEnv.PLAYWRIGHT_JSON_OUTPUT_NAME),
+            JSON.stringify({ ok: true }),
+            'utf8',
+          );
+          return { exitCode: 1, stdout: '', stderr: '' };
+        },
+      );
+
+      // 配置文件在 .idt/ 下，相对路径会被按配置目录解析而落进 .idt/.idt/
+      assert.equal(recordedEnv.PLAYWRIGHT_JSON_OUTPUT_NAME, expected);
+      assert.equal(path.isAbsolute(String(recordedEnv.PLAYWRIGHT_JSON_OUTPUT_NAME)), true);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reads back the report written at that absolute path', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'idt-runner-read-'));
+    try {
+      const result = await runPlaywrightSpec(
+        'tests/e2e/a.spec.ts',
+        tempDir,
+        async (_command, _args, options) => {
+          fs.writeFileSync(
+            String(options?.env?.PLAYWRIGHT_JSON_OUTPUT_NAME),
+            JSON.stringify({ stats: { unexpected: 1 } }),
+            'utf8',
+          );
+          return { exitCode: 1, stdout: '', stderr: '' };
+        },
+      );
+      assert.equal(result.exitCode, 1);
+      assert.deepEqual(result.report, { stats: { unexpected: 1 } });
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+  it('passes the spec to playwright as a project-root-relative posix path', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'idt-runner-rel-'));
+    try {
+      let recordedArgs: string[] = [];
+      const absoluteSpec = path.join(tempDir, 'tests', 'e2e', 'generated', 'a.spec.ts');
+
+      await runPlaywrightSpec(absoluteSpec, tempDir, async (_c, args, options) => {
+        recordedArgs = args;
+        fs.writeFileSync(
+          String(options?.env?.PLAYWRIGHT_JSON_OUTPUT_NAME),
+          '{}',
+          'utf8',
+        );
+        return { exitCode: 0, stdout: '', stderr: '' };
+      });
+
+      // Playwright 把位置参数当正则匹配文件路径，绝对 Windows 路径匹配不到任何文件
+      assert.ok(
+        recordedArgs.includes('tests/e2e/generated/a.spec.ts'),
+        `expected a relative posix spec path, got ${recordedArgs.join(' ')}`,
+      );
+      assert.equal(recordedArgs.some((a) => a.includes('\\')), false);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
