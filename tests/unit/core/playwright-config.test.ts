@@ -42,6 +42,18 @@ describe('project playwright config', () => {
     assert.match(source, /cwd: *['"]\.\.['"]/);
   });
 
+  it('waits long enough for a cold webpack build', () => {
+    // 实测财达这种 vue-cli 4 应用冷编译就要两分多钟，180s 的窗口会超时，
+    // 而且失败信息只说 Timed out，看不出是编译慢还是真起不来。
+    const source = renderProjectPlaywrightConfig(project());
+    const match = source.match(/webServer:[\s\S]*?timeout: ([0-9_]+)/);
+    assert.ok(match, 'webServer 必须有 timeout');
+    assert.ok(
+      Number(match[1].replace(/_/g, '')) >= 300_000,
+      `timeout 太短：${match[1]}`,
+    );
+  });
+
   it('omits webServer when the project declares no dev command', () => {
     const source = renderProjectPlaywrightConfig(project({ devCommand: undefined }));
     assert.equal(source.includes('webServer'), false);

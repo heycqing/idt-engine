@@ -24,7 +24,9 @@ export function renderProjectPlaywrightConfig(project: IdtProject): string {
     cwd: '..',
     url: baseURL,
     reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
+    // 老的 webpack 应用冷编译可能要好几分钟。等不起时用 IDT_BASE_URL
+    // 指向一个已经起好的服务器。
+    timeout: 300_000,
   },`
     : '';
 
