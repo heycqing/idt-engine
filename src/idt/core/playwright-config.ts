@@ -19,6 +19,9 @@ export function renderProjectPlaywrightConfig(project: IdtProject): string {
     ? `
   webServer: {
     command: ${JSON.stringify(project.devCommand).replace(/"/g, "'")},
+    // Playwright 默认把 cwd 设成配置文件所在目录，也就是 .idt/，
+    // 启动命令在那里跑找不到项目的 package.json。回到项目根。
+    cwd: '..',
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,

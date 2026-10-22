@@ -35,6 +35,13 @@ describe('project playwright config', () => {
     assert.match(source, /@playwright\/test/);
   });
 
+  it('runs webServer in the project root, not in .idt', () => {
+    // Playwright 的 webServer.cwd 默认是配置文件所在目录，而生成的配置就放在
+    // .idt/ 下。不显式指定的话启动命令会在 .idt/ 里跑，pnpm 找不到脚本。
+    const source = renderProjectPlaywrightConfig(project());
+    assert.match(source, /cwd: *['"]\.\.['"]/);
+  });
+
   it('omits webServer when the project declares no dev command', () => {
     const source = renderProjectPlaywrightConfig(project({ devCommand: undefined }));
     assert.equal(source.includes('webServer'), false);
