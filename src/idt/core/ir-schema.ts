@@ -3,6 +3,8 @@ import { z } from 'zod';
 const SafePattern = /^[A-Za-z0-9_./:?*=^$()[\]|+\\-]{1,200}$/;
 
 export const TargetRoleSchema = z.enum([
+  // 伪 role：没有 ARIA role 但带静态文本的可点元素，用 getByText 定位
+  'text',
   'button',
   'link',
   'textbox',

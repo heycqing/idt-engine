@@ -95,6 +95,7 @@ describe('vue sfc', () => {
       'button:提交',
       'button:撤单',
       'button:自定义按钮',
+      'text:可点文字但不是 button',
       'link:去 A',
       'link:去 B',
       'textbox:股票代码',
@@ -168,6 +169,40 @@ describe('vue sfc', () => {
     assert.deepEqual(scan.elements, [
       { role: 'heading', dynamic: true, tag: 'h3' },
       { role: 'heading', name: '纯静态标题' },
+    ]);
+  });
+  it('collects clickable non-role tags that carry static text', () => {
+    const scan = scanVueTemplate(`
+      <div>
+        <div @click="pickAll">全部</div>
+        <span @click.stop="redo">重新创建</span>
+        <i @click="close">关闭</i>
+        <div @click="noText"><van-icon name="x" /></div>
+        <i @click="iconOnly"></i>
+        <div @click="interp">保持在线 {{ hours }} 小时</div>
+        <button @click="real">真按钮</button>
+        <div role="button" @click="explicit">显式角色</div>
+      </div>
+    `);
+    assert.deepEqual(scan.elements, [
+      { role: 'text', name: '全部' },
+      { role: 'text', name: '重新创建' },
+      { role: 'text', name: '关闭' },
+      { role: 'button', name: '真按钮' },
+      { role: 'button', name: '显式角色' },
+    ]);
+  });
+
+  it('keeps a text element and a same-named real role as separate entries', () => {
+    const scan = scanVueTemplate(`
+      <div>
+        <button>确认</button>
+        <div @click="alsoConfirm">确认</div>
+      </div>
+    `);
+    assert.deepEqual(scan.elements, [
+      { role: 'button', name: '确认' },
+      { role: 'text', name: '确认' },
     ]);
   });
 });

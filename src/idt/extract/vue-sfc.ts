@@ -20,6 +20,8 @@ export type VueLink = {
 };
 
 export type ElementRole =
+  /** 伪 role：没有 ARIA role 但带静态文本的可点元素，用 getByText 定位 */
+  | 'text'
   | 'button'
   | 'link'
   | 'textbox'
@@ -371,7 +373,13 @@ function roleOf(tag: string, attrs: Attr[]): ElementRole | undefined {
     return linked ? 'link' : undefined;
   }
 
-  return TAG_ROLES[tag];
+  const mapped = TAG_ROLES[tag];
+  if (mapped) return mapped;
+
+  // 没有 ARIA role 但能点。只有带静态文本时才有意义（在 elementOf 里判定），
+  // 用 getByText 定位。此前把它们当 button 是错的：真实无障碍树里没有这个
+  // role，getByRole 永远定位不到，而 heal 只在同 role 内换名字，救不回来。
+  return attrs.some((attr) => isClickAttr(attr.name)) ? 'text' : undefined;
 }
 
 // 曾经把「带 @click 的 div/span」也算成 button，这是错的：真实无障碍树里它们
@@ -381,6 +389,14 @@ function roleOf(tag: string, attrs: Attr[]): ElementRole | undefined {
 /** 名称取值顺序：aria-label → label → placeholder → 帧内可见文本 → title。 */
 function elementOf(frame: Frame): PageElement | null {
   if (!frame.role) return null;
+
+  // 文本定位的元素只认静态可见文本：没有文本就定位不了，收进来只会让模型
+  // 反复试一个注定失败的方向，所以直接不收，也不产出 dynamic 占位。
+  if (frame.role === 'text') {
+    if (frame.interpolated) return null;
+    const text = frame.texts.join(' ').trim();
+    return text.length > 0 ? { role: 'text', name: text } : null;
+  }
 
   for (const attr of NAME_ATTRS) {
     if (attr === 'title') break;

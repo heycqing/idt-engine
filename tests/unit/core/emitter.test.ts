@@ -974,4 +974,17 @@ describe('emitter test suite', () => {
     assert.equal(emitSpec(ir), expected);
     assert.equal(emitSpec(ir, { mode: 'history' }), expected);
   });
+  it('locates a text pseudo-role with getByText, exact and not first()', () => {
+    const ir = JSON.parse(
+      fs.readFileSync(path.join(fixturesDir, 'flow_aabbccddee.ir.json'), 'utf8'),
+    );
+    ir.stages[0].actions[0].targetRole = 'text';
+    ir.stages[0].actions[0].targetName = '全部';
+
+    const source = emitSpec(ir);
+    assert.match(source, /getByText\("全部", \{ exact: true \}\)/);
+    assert.equal(source.includes("getByRole(\"text\""), false);
+    // 重复文本要让 strict mode 报错，不能靠 .first() 掩盖
+    assert.equal(source.includes('.first()'), false);
+  });
 });

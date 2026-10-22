@@ -9,6 +9,7 @@ export const RouteTransitionSchema = z.object({
 
 export const PageElementSchema = z.object({
   role: z.enum([
+    'text',
     'button',
     'link',
     'textbox',

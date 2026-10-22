@@ -229,15 +229,21 @@ export function emitSpec(
       const roleStr = JSON.stringify(action.targetRole);
       const nameStr = JSON.stringify(action.targetName);
       const timeout = action.timeoutMs;
+      // text 是伪 role：没有 ARIA role 但带静态文本的可点元素。exact 避免
+      // 「全部」命中「全部撤单」；不加 .first()，文本重复就让 strict mode 报错。
+      const locator =
+        action.targetRole === 'text'
+          ? `page.getByText(${nameStr}, { exact: true })`
+          : `page.getByRole(${roleStr}, { name: ${nameStr} })`;
       switch (action.actionType) {
         case 'CLICK':
-          return `page.getByRole(${roleStr}, { name: ${nameStr} }).click({ timeout: ${timeout} })`;
+          return `${locator}.click({ timeout: ${timeout} })`;
         case 'FILL':
-          return `page.getByRole(${roleStr}, { name: ${nameStr} }).fill(${JSON.stringify(action.inputValue ?? '')}, { timeout: ${timeout} })`;
+          return `${locator}.fill(${JSON.stringify(action.inputValue ?? '')}, { timeout: ${timeout} })`;
         case 'CHECK':
-          return `page.getByRole(${roleStr}, { name: ${nameStr} }).check({ timeout: ${timeout} })`;
+          return `${locator}.check({ timeout: ${timeout} })`;
         case 'SELECT':
-          return `page.getByRole(${roleStr}, { name: ${nameStr} }).selectOption(${JSON.stringify(action.inputValue ?? '')}, { timeout: ${timeout} })`;
+          return `${locator}.selectOption(${JSON.stringify(action.inputValue ?? '')}, { timeout: ${timeout} })`;
       }
     };
 

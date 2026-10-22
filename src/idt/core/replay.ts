@@ -133,29 +133,27 @@ export async function launchChromiumReplay(
     const context = await browser.newContext(contextOptions);
     const playwrightPage = await context.newPage();
 
+    // text 是伪 role，用 getByText 定位，与 emitter 保持一致
+    const locate = (role: string, name: string) =>
+      role === 'text'
+        ? playwrightPage.getByText(name, { exact: true })
+        : playwrightPage.getByRole(role as any, { name });
+
     const replayPage: ReplayPage = {
       async goto(url: string) {
         await playwrightPage.goto(url);
       },
       async click(role: string, name: string, timeoutMs: number) {
-        await playwrightPage
-          .getByRole(role as any, { name })
-          .click({ timeout: timeoutMs });
+        await locate(role, name).click({ timeout: timeoutMs });
       },
       async fill(role: string, name: string, value: string, timeoutMs: number) {
-        await playwrightPage
-          .getByRole(role as any, { name })
-          .fill(value, { timeout: timeoutMs });
+        await locate(role, name).fill(value, { timeout: timeoutMs });
       },
       async check(role: string, name: string, timeoutMs: number) {
-        await playwrightPage
-          .getByRole(role as any, { name })
-          .check({ timeout: timeoutMs });
+        await locate(role, name).check({ timeout: timeoutMs });
       },
       async selectOption(role: string, name: string, value: string, timeoutMs: number) {
-        await playwrightPage
-          .getByRole(role as any, { name })
-          .selectOption(value, { timeout: timeoutMs });
+        await locate(role, name).selectOption(value, { timeout: timeoutMs });
       },
       async waitForURL(pattern: string, timeoutMs: number) {
         await playwrightPage.waitForURL(new RegExp(pattern), {
