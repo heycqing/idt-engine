@@ -17,6 +17,16 @@ pnpm idt:link -- --host "D:\宿主仓库根目录"
 
 脚本接着安装缺的依赖、执行 `pnpm idt:sync`、安装 Chromium。只想先改文件时加 `--no-install`。
 
+宿主是 monorepo 时加 `--project <相对路径>`，顺手把 IDT 标志写进那个业务方的 `package.json`；标志里的项目名默认取目录名，要改用 `--project-name`。已经有标志的包不会被覆盖。
+
+```powershell
+pnpm idt:link -- --host "D:\宿主仓库根目录" --project apps/caida
+```
+
+依赖装在宿主的 workspace 根（pnpm 在根目录执行 `add` 需要 `-w`，脚本会自己判断）。`tsx` 依赖 `esbuild` 的 install 脚本放置原生二进制，pnpm 10+ 默认不执行，宿主要在 `pnpm-workspace.yaml` 的 `allowBuilds` 里放行，否则四条 idt 命令都没有可执行文件。
+
+宿主克隆之后需要先 `git submodule update --init`，再 `pnpm install`。
+
 接入后进入宿主根目录。看 `.idt/topology.json`。配置好模型后执行 `pnpm idt "一句意图"`。先不要加 `--yes`。
 
 ## 模型配置
