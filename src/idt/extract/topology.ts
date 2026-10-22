@@ -14,6 +14,7 @@ import {
   ProjectTopologySchema,
   SemanticIndexSchema,
   type ProjectTopology,
+  type PageElement,
   type RouteTopologyNode,
   type RouteTransition,
   type SemanticIndex,
@@ -27,7 +28,10 @@ import {
   type VueTemplateScan,
 } from './vue-sfc.js';
 import { extractVueRouterMappings } from './vue-router.js';
-import { collectComponentTransitions } from './component-nav.js';
+import {
+  collectComponentElements,
+  collectComponentTransitions,
+} from './component-nav.js';
 
 function isFunctionNode(node: Node): boolean {
   return (
@@ -300,6 +304,22 @@ export function extractProjectTopology(
   const routes: Record<string, RouteTopologyNode> = {};
   const semanticIndexMap = new Map<string, SemanticIndexEntry>();
   const componentNavDepth = options.componentNavDepth ?? 1;
+
+  /** 页面自身的元素在前，子组件的在后；role 与 name 都相同的去重。 */
+  function mergeElements(own: PageElement[], fromComponents: PageElement[]): PageElement[] {
+    const seen = new Set<string>();
+    const out: PageElement[] = [];
+    for (const element of [...own, ...fromComponents]) {
+      const key =
+        element.name !== undefined
+          ? `${element.role}|${element.name}`
+          : `${element.role}| ${element.tag ?? ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ ...element });
+    }
+    return out;
+  }
   // 只排除真的会成为路由的文件。被 pageGlobs 命中但落在 components/ 下的
   // 不是页面，恰恰是要顺着 import 走进去的那些。
   const allPageFiles = new Set(
@@ -716,7 +736,17 @@ export function extractProjectTopology(
         semanticKeywords: Array.from(new Set(routeKeywords)),
         dynamicParams: extractDynamicParams(pattern),
         transitions: transitions.map((transition) => ({ ...transition })),
-        elements: (item.vue?.elements ?? []).map((element) => ({ ...element })),
+        elements: mergeElements(
+          item.vue?.elements ?? [],
+          componentNavDepth > 0
+            ? collectComponentElements(
+                projectRoot,
+                item.absPath,
+                allPageFiles,
+                componentNavDepth,
+              )
+            : [],
+        ),
       };
     }
   }

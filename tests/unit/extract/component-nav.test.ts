@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  collectComponentElements,
   collectComponentTransitions,
   resolveImportSpecifier,
 } from '../../../src/idt/extract/component-nav.js';
@@ -168,6 +169,48 @@ describe('component navigation', () => {
 
       const found = collectComponentTransitions(root, page, new Set(), 1);
       assert.equal(found.length, 1);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+  it('collects elements from child components too', () => {
+    const root = temp();
+    try {
+      const page = write(
+        root,
+        'src/views/home/index.vue',
+        `<template><Nav /></template>
+         <script>import Nav from './components/Nav.vue';</script>`,
+      );
+      write(
+        root,
+        'src/views/home/components/Nav.vue',
+        `<template>
+           <div @click="go">账户管理</div>
+           <button>保存</button>
+         </template>
+         <script>export default { methods: { go() {} } };</script>`,
+      );
+
+      const found = collectComponentElements(root, page, new Set(), 1);
+      assert.deepEqual(found, [
+        { role: 'text', name: '账户管理' },
+        { role: 'button', name: '保存' },
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not take elements from another page', () => {
+    const root = temp();
+    try {
+      const page = write(root, 'src/views/a/index.vue',
+        `<script>import B from '../b/index.vue';</script>`);
+      const other = write(root, 'src/views/b/index.vue',
+        '<template><button>别的页面的按钮</button></template>');
+
+      assert.deepEqual(collectComponentElements(root, page, new Set([other]), 1), []);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

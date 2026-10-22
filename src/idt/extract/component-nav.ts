@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { RouteTransition } from '../schemas/topology.schema.js';
+import type { PageElement, RouteTransition } from '../schemas/topology.schema.js';
 import { extractVueSfc, scanVueTemplate } from './vue-sfc.js';
 
 /**
@@ -116,16 +116,16 @@ function readSource(file: string): { script: string; template: string } {
  * 收集 pageFile 的 import 子树（最多 maxDepth 层）里的跳转。
  * pageFiles 里的文件一律跳过——另一个页面的跳转不该算到本页头上。
  */
-export function collectComponentTransitions(
+function walkImports(
   projectRoot: string,
   pageFile: string,
   pageFiles: ReadonlySet<string>,
-  maxDepth = 1,
-): RouteTransition[] {
+  maxDepth: number,
+  visit: (file: string) => void,
+): void {
   const seen = new Set<string>([path.resolve(pageFile)]);
-  const byTarget = new Map<string, RouteTransition>();
-
   let frontier: string[] = [path.resolve(pageFile)];
+
   for (let depth = 0; depth < maxDepth; depth += 1) {
     const next: string[] = [];
     for (const current of frontier) {
@@ -139,31 +139,74 @@ export function collectComponentTransitions(
         if (seen.has(abs) || pageFiles.has(abs)) continue;
         seen.add(abs);
         next.push(abs);
-
-        const { script: depScript, template } = readSource(abs);
-        const clicks = template ? scanVueTemplate(template).clicks : new Map();
-
-        NAV_RE.lastIndex = 0;
-        let nav: RegExpExecArray | null;
-        while ((nav = NAV_RE.exec(depScript)) !== null) {
-          const target = literalTarget(firstArgument(depScript, nav.index + nav[0].length));
-          if (!target || byTarget.has(target)) continue;
-          const fnName = enclosingFunctionName(depScript, nav.index);
-          byTarget.set(target, {
-            targetRoute: target,
-            triggerType: 'CLICK',
-            triggerElementText: (fnName && clicks.get(fnName)) || undefined,
-            codeSlice: depScript.slice(
-              Math.max(0, nav.index - 200),
-              Math.min(depScript.length, nav.index + 200),
-            ),
-          });
-        }
+        visit(abs);
       }
     }
     frontier = next;
     if (frontier.length === 0) break;
   }
+}
+
+export function collectComponentTransitions(
+  projectRoot: string,
+  pageFile: string,
+  pageFiles: ReadonlySet<string>,
+  maxDepth = 1,
+): RouteTransition[] {
+  const byTarget = new Map<string, RouteTransition>();
+
+  walkImports(projectRoot, pageFile, pageFiles, maxDepth, (abs) => {
+    const { script, template } = readSource(abs);
+    const clicks = template ? scanVueTemplate(template).clicks : new Map();
+
+    NAV_RE.lastIndex = 0;
+    let nav: RegExpExecArray | null;
+    while ((nav = NAV_RE.exec(script)) !== null) {
+      const target = literalTarget(firstArgument(script, nav.index + nav[0].length));
+      if (!target || byTarget.has(target)) continue;
+      const fnName = enclosingFunctionName(script, nav.index);
+      byTarget.set(target, {
+        targetRoute: target,
+        triggerType: 'CLICK',
+        triggerElementText: (fnName && clicks.get(fnName)) || undefined,
+        codeSlice: script.slice(
+          Math.max(0, nav.index - 200),
+          Math.min(script.length, nav.index + 200),
+        ),
+      });
+    }
+  });
 
   return [...byTarget.values()];
+}
+
+/**
+ * 元素清单同样要跟着 import 走。边有了但入口元素在子组件里的话，模型会
+ * 正确地拒绝编造，跨页流程照样编不出来——实测财达 /credit/home 的
+ * 「账户管理」入口就是这种情况。
+ */
+export function collectComponentElements(
+  projectRoot: string,
+  pageFile: string,
+  pageFiles: ReadonlySet<string>,
+  maxDepth = 1,
+): PageElement[] {
+  const out: PageElement[] = [];
+  const seen = new Set<string>();
+
+  walkImports(projectRoot, pageFile, pageFiles, maxDepth, (abs) => {
+    const { template } = readSource(abs);
+    if (!template) return;
+    for (const element of scanVueTemplate(template).elements) {
+      const key =
+        element.name !== undefined
+          ? `${element.role}|${element.name}`
+          : `${element.role}| ${element.tag ?? ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(element);
+    }
+  });
+
+  return out;
 }
