@@ -45,6 +45,8 @@ export const ProjectTopologySchema = z.object({
     .object({
       mode: z.enum(['hash', 'history']),
       base: z.string().min(1).optional(),
+      // 每次导航都带上的查询串，比如宿主的免登录渠道旁路
+      query: z.record(z.string(), z.string()).optional(),
     })
     .optional(),
   routes: z.record(z.string(), RouteTopologyNodeSchema),

@@ -151,6 +151,7 @@ export interface ExtractTopologyOptions {
   /** 覆盖静态检测出的路由模式与 base，静态解析盖不到的写法走这里。 */
   routerMode?: 'hash' | 'history';
   routerBase?: string;
+  routerQuery?: Record<string, string>;
 }
 
 export function extractProjectTopology(
@@ -711,6 +712,9 @@ export function extractProjectTopology(
           router: {
             mode: resolvedRouterMode,
             ...(resolvedRouterBase ? { base: resolvedRouterBase } : {}),
+            ...(options.routerQuery && Object.keys(options.routerQuery).length > 0
+              ? { query: options.routerQuery }
+              : {}),
           },
         }
       : {}),

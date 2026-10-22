@@ -55,6 +55,7 @@ function extractOptions(project: IdtProject) {
       localeFiles: project.localeFiles,
     },
     projectName: project.implicit ? undefined : project.name,
+    routerQuery: project.urlQuery,
   };
 }
 

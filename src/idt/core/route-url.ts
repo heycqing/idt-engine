@@ -6,11 +6,18 @@ export type RouterMode = 'hash' | 'history';
 export interface RouterUrlOptions {
   mode: RouterMode;
   base?: string;
+  /**
+   * 每次导航都带上的查询串。宿主有免登录渠道旁路之类的开关时用它。
+   * hash 模式下写在 # 之内，否则只进 window.location.search，
+   * vue-router 的 to.query 读不到。
+   */
+  query?: Record<string, string>;
 }
 
 export const DEFAULT_ROUTER_URL_OPTIONS: Required<RouterUrlOptions> = {
   mode: 'history',
   base: '/',
+  query: {},
 };
 
 function normalizeBase(base: string | undefined): string {
@@ -20,13 +27,24 @@ function normalizeBase(base: string | undefined): string {
   return withLeading.endsWith('/') ? withLeading : `${withLeading}/`;
 }
 
+function queryString(query: RouterUrlOptions['query']): string {
+  const entries = Object.entries(query ?? {});
+  if (entries.length === 0) return '';
+  return (
+    '?' +
+    entries
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join('&')
+  );
+}
+
 /** 应用路由 → 浏览器地址。不带主机名，继续靠 Playwright 的 baseURL。 */
 export function toBrowserUrl(
   route: string,
   options: RouterUrlOptions = DEFAULT_ROUTER_URL_OPTIONS,
 ): string {
   const base = normalizeBase(options.base);
-  const path = route.startsWith('/') ? route : `/${route}`;
+  const path = (route.startsWith('/') ? route : `/${route}`) + queryString(options.query);
 
   if (options.mode === 'hash') {
     return `${base}#${path}`;
@@ -45,8 +63,15 @@ export function toGuardPattern(
   pattern: string,
   options: RouterUrlOptions = DEFAULT_ROUTER_URL_OPTIONS,
 ): string {
-  if (options.mode !== 'hash') return pattern;
-  return pattern.startsWith('/') ? `#${pattern}` : pattern;
+  let out = pattern;
+
+  // 带查询串之后 URL 不再以路径结尾，尾部的 $ 锚点会匹配不上
+  if (Object.keys(options.query ?? {}).length > 0 && out.endsWith('$')) {
+    out = `${out.slice(0, -1)}(\?.*)?$`;
+  }
+
+  if (options.mode !== 'hash') return out;
+  return out.startsWith('/') ? `#${out}` : out;
 }
 
 /** 从拓扑顶层的 router 字段读出选项，缺失按 history。 */

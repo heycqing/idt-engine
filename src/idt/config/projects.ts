@@ -41,6 +41,8 @@ export interface IdtProject {
   devCommand?: string;
   /** 开发服务器端口，标志没写按 3000。 */
   port: number;
+  /** 每次导航都带上的查询串，比如宿主的免登录渠道旁路。 */
+  urlQuery?: Record<string, string>;
 }
 
 export const DEFAULT_PROJECT_PORT = 3000;
@@ -81,6 +83,15 @@ function devCommandOf(found: MarkedPackage): string | undefined {
     return `pnpm --filter ${found.packageName} dev`;
   }
   return undefined;
+}
+
+/** 只认扁平的字符串映射，有一个值不是字符串就整体忽略，不做猜测。 */
+function stringMap(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) return undefined;
+  if (!entries.every(([, v]) => typeof v === 'string')) return undefined;
+  return Object.fromEntries(entries as Array<[string, string]>);
 }
 
 function stringArray(value: unknown): string[] | null {
@@ -140,6 +151,7 @@ export function resolveProjects(idtRoot: string, config: IdtConfig): IdtProject[
           stringArray(marker.localeFiles) ??
           LOCALE_CANDIDATES.filter((rel) => fs.existsSync(path.join(dir, ...rel.split('/')))),
         devCommand: devCommandOf(found),
+        urlQuery: stringMap(marker.urlQuery),
         port:
           typeof declaredPort === 'number' && Number.isInteger(declaredPort)
             ? declaredPort

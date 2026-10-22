@@ -239,4 +239,25 @@ describe('idt projects', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+  it('reads urlQuery from the marker', () => {
+    const root = tempRoot();
+    try {
+      mark(root, 'apps/caida', { project: 'caida', urlQuery: { channel: 'cdgst' } });
+      const [project] = resolveProjects(root, { pageGlobs: [], routerGlobs: [], localeFiles: [] });
+      assert.deepEqual(project.urlQuery, { channel: 'cdgst' });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores a urlQuery that is not a flat string map', () => {
+    const root = tempRoot();
+    try {
+      mark(root, 'apps/caida', { project: 'caida', urlQuery: { n: 1, ok: 'yes' } });
+      const [project] = resolveProjects(root, { pageGlobs: [], routerGlobs: [], localeFiles: [] });
+      assert.equal(project.urlQuery, undefined);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

@@ -16,7 +16,7 @@ describe('route url', () => {
     assert.equal(toBrowserUrl('/', history), '/');
     // 不传选项时必须等同 history，这是既有宿主的回归基线
     assert.equal(toBrowserUrl('/credit/amount'), '/credit/amount');
-    assert.deepEqual(DEFAULT_ROUTER_URL_OPTIONS, { mode: 'history', base: '/' });
+    assert.deepEqual(DEFAULT_ROUTER_URL_OPTIONS, { mode: 'history', base: '/', query: {} });
   });
 
   it('inserts the hash for hash mode', () => {
@@ -66,5 +66,56 @@ describe('route url', () => {
       mode: 'hash',
       base: '/trade/',
     });
+  });
+  it('appends the configured query inside the hash so vue-router sees it', () => {
+    // 财达的登录守卫认 to.query.channel，hash 路由下查询串必须写在 # 之内，
+    // 写在 # 外面只进 window.location.search，vue-router 读不到。
+    assert.equal(
+      toBrowserUrl('/credit/amount/finance', {
+        mode: 'hash',
+        query: { channel: 'cdgst' },
+      }),
+      '/#/credit/amount/finance?channel=cdgst',
+    );
+  });
+
+  it('appends the query for history mode too', () => {
+    assert.equal(
+      toBrowserUrl('/credit/amount', { mode: 'history', query: { channel: 'cdgst' } }),
+      '/credit/amount?channel=cdgst',
+    );
+  });
+
+  it('keeps the base before the hash when a query is configured', () => {
+    assert.equal(
+      toBrowserUrl('/a', { mode: 'hash', base: '/trade/', query: { k: 'v' } }),
+      '/trade/#/a?k=v',
+    );
+  });
+
+  it('encodes query values and preserves declaration order', () => {
+    assert.equal(
+      toBrowserUrl('/a', { mode: 'hash', query: { b: '1 2', a: 'x&y' } }),
+      '/#/a?b=1%202&a=x%26y',
+    );
+  });
+
+  it('is unchanged when no query is configured', () => {
+    assert.equal(toBrowserUrl('/a', { mode: 'hash' }), '/#/a');
+    assert.equal(toBrowserUrl('/a', { mode: 'hash', query: {} }), '/#/a');
+  });
+
+  it('relaxes a trailing anchor in the guard pattern when a query is configured', () => {
+    // 带查询串之后 URL 不再以路径结尾，/checkout$ 这种锚点会匹配不上
+    assert.equal(
+      toGuardPattern('/checkout$', { mode: 'hash', query: { channel: 'cdgst' } }),
+      '#/checkout(\?.*)?$',
+    );
+    assert.equal(
+      toGuardPattern('/checkout$', { mode: 'history', query: { channel: 'cdgst' } }),
+      '/checkout(\?.*)?$',
+    );
+    // 没有查询串时保持原样
+    assert.equal(toGuardPattern('/checkout$', { mode: 'hash' }), '#/checkout$');
   });
 });
