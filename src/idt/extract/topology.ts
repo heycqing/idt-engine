@@ -192,6 +192,13 @@ export function extractProjectTopology(
   fileItems.push(...vuePages);
   fileItems.sort((a, b) => a.relPosix.localeCompare(b.relPosix));
   const routerMappings = extractVueRouterMappings(projectRoot, config.routerGlobs);
+  // 有路由配置、所有 record 都解析出了组件、且一个都没落空，才算完整。
+  const routerFullyResolved =
+    config.routerGlobs.length > 0 &&
+    routerMappings.routeRecordCount > 0 &&
+    routerMappings.mappedRouteCount === routerMappings.routeRecordCount &&
+    routerMappings.unresolvedComponents.length === 0;
+
   const resolvedRouterMode = options.routerMode ?? routerMappings.routerMode;
   const resolvedRouterBase = options.routerBase ?? routerMappings.routerBase;
   if (config.routerGlobs.length > 0) {
@@ -294,6 +301,18 @@ export function extractProjectTopology(
 
     const mappedRoutes = routerMappings.routesByComponent.get(path.resolve(item.absPath));
     const fileRoute = toRoutePattern(projectRoot, item.absPath);
+
+    // 路由器把所有 record 都解析出来了，就说明这份路由表是完整的：没被它引用
+    // 的文件在真实应用里根本到不了，再用文件路径兜底就是凭空造路由。而且
+    // toRoutePattern 会剥掉 /views/ 之前的一切，src/credit/views/transfer 会
+    // 变成 /transfer 跟真路由撞车。解析不完整时仍然兜底，否则会漏页面。
+    if (!mappedRoutes?.length && routerFullyResolved) {
+      console.log(
+        `[IDT] Warning: page not mounted by any route, skipped: ${item.relPosix}`,
+      );
+      continue;
+    }
+
     const rawRoutePatterns = mappedRoutes?.length ? mappedRoutes : fileRoute ? [fileRoute] : [];
     if (rawRoutePatterns.length === 0) {
       continue;

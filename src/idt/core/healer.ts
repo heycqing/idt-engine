@@ -67,11 +67,24 @@ export function firstFailure(
   return traverse(report);
 }
 
+/**
+ * 自愈目标。action 指某条动作的 targetName，routeGuard 指 stage 的
+ * readyName —— 后者在 emit 出来的 spec 里同样是一行 getByRole，
+ * 此前只扫 actions，断言失败时直接报"定位不到可自愈的目标"。
+ */
+export interface HealTarget {
+  kind: 'action' | 'routeGuard';
+  stageIndex: number;
+  actionIndex: number;
+  role: string;
+  name: string;
+}
+
 export function locateHealTarget(
   specSource: string,
   ir: StateTransitionIR,
   failure: { line: number; message: string },
-): { stageIndex: number; actionIndex: number; role: string; name: string } {
+): HealTarget {
   if (!failure.message.includes('Timeout')) {
     const err = new Error('Failure message does not contain Timeout');
     (err as any).exitCode = 2;
@@ -118,12 +131,7 @@ export function locateHealTarget(
   }
 
   // Collect IR actions in emitter emission order
-  const emittedActions: Array<{
-    stageIndex: number;
-    actionIndex: number;
-    role: string;
-    name: string;
-  }> = [];
+  const emittedActions: HealTarget[] = [];
 
   for (let stageIdx = 0; stageIdx < ir.stages.length; stageIdx++) {
     const stage = ir.stages[stageIdx];
@@ -147,6 +155,7 @@ export function locateHealTarget(
     for (let i = 0; i < actions.length; i++) {
       if (i !== triggerIndex) {
         emittedActions.push({
+          kind: 'action',
           stageIndex: stageIdx,
           actionIndex: i,
           role: actions[i].targetRole,
@@ -158,10 +167,23 @@ export function locateHealTarget(
     // Trigger action
     if (triggerIndex >= 0) {
       emittedActions.push({
+        kind: 'action',
         stageIndex: stageIdx,
         actionIndex: triggerIndex,
         role: actions[triggerIndex].targetRole,
         name: actions[triggerIndex].targetName,
+      });
+    }
+
+    // routeGuard 的 ready 断言紧跟在本 stage 的动作之后被 emit 出来
+    const guard = stage.invariants.routeGuard;
+    if (guard?.readyRole && guard.readyName) {
+      emittedActions.push({
+        kind: 'routeGuard',
+        stageIndex: stageIdx,
+        actionIndex: Math.max(actions.length - 1, 0),
+        role: guard.readyRole,
+        name: guard.readyName,
       });
     }
   }
@@ -172,7 +194,7 @@ export function locateHealTarget(
 
   if (matchedActions.length !== 1) {
     const err = new Error(
-      `Expected unique action in IR matching role "${role}" and name "${name}", found ${matchedActions.length}`,
+      `IR 里匹配 role "${role}" 且 name "${name}" 的可自愈位置不唯一，找到 ${matchedActions.length} 个`,
     );
     (err as any).exitCode = 2;
     throw err;
@@ -189,10 +211,7 @@ export interface HealOptions {
   runSpec?: (
     specPath: string,
   ) => Promise<{ exitCode: number; report: unknown }>;
-  replay?: (
-    ir: StateTransitionIR,
-    target: { stageIndex: number; actionIndex: number; role: string; name: string },
-  ) => Promise<string>;
+  replay?: (ir: StateTransitionIR, target: HealTarget) => Promise<string>;
 }
 
 export interface HealResult {
@@ -270,12 +289,7 @@ export async function heal(options: HealOptions): Promise<HealResult> {
     return { exitCode: 2, reason: '报告里没有失败用例，无从自愈' };
   }
 
-  let target: {
-    stageIndex: number;
-    actionIndex: number;
-    role: string;
-    name: string;
-  };
+  let target: HealTarget;
   try {
     target = locateHealTarget(originalSpecContent, ir, failure);
   } catch (err: any) {
@@ -322,8 +336,16 @@ export async function heal(options: HealOptions): Promise<HealResult> {
 
   // 6. Update targetName in IR and re-emit spec
   const updatedIr: StateTransitionIR = JSON.parse(JSON.stringify(ir));
-  updatedIr.stages[target.stageIndex].actions[target.actionIndex].targetName =
-    choice.name;
+  if (target.kind === 'routeGuard') {
+    const guard = updatedIr.stages[target.stageIndex].invariants.routeGuard;
+    if (!guard) {
+      return { exitCode: 2, reason: '目标 stage 上已经没有 routeGuard 了' };
+    }
+    guard.readyName = choice.name;
+  } else {
+    updatedIr.stages[target.stageIndex].actions[target.actionIndex].targetName =
+      choice.name;
+  }
 
   let newSpecContent: string;
   try {

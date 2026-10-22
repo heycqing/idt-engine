@@ -797,4 +797,71 @@ ${paddingLines}
       assert.deepEqual(parsed.data.routes['/buy'].elements, []);
     }
   });
+  it('does not invent file-path routes once the router resolved every record', () => {
+    const tmp = createTempDir();
+    try {
+      writeFile(
+        tmp,
+        'idt.config.ts',
+        `export default {
+          pageGlobs: ['src/views/**/*.vue', 'src/credit/views/**/*.vue'],
+          routerGlobs: ['src/router/**/*.js'],
+          localeFiles: [],
+        };
+`,
+      );
+      writeFile(tmp, 'src/views/transfer/index.vue', '<template><div>转账</div></template>');
+      // 这个文件没有被任何路由引用。文件路径兜底会剥掉 credit/ 前缀，
+      // 造出一条和真路由同名的 /transfer，撞车后真路由还可能被挤掉。
+      writeFile(tmp, 'src/credit/views/transfer/index.vue', '<template><div>信用转账</div></template>');
+      writeFile(
+        tmp,
+        'src/router/index.js',
+        `const Transfer = () => import('@/views/transfer')
+         export default [{ path: '/transfer', component: Transfer }]
+`,
+      );
+
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (line: unknown) => logs.push(String(line));
+      let topo: ReturnType<typeof extractProjectTopology>;
+      try {
+        topo = extractProjectTopology(tmp);
+      } finally {
+        console.log = originalLog;
+      }
+
+      assert.equal(topo.routes['/transfer'].filePath, 'src/views/transfer/index.vue');
+      assert.equal(
+        logs.some((line) => line.includes('duplicate route')),
+        false,
+        `不该再出现 duplicate 警告：${logs.join(' | ')}`,
+      );
+      assert.ok(
+        logs.some((line) => line.includes('src/credit/views/transfer/index.vue')),
+        '被跳过的未挂载文件要有迹可循',
+      );
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
+  it('still falls back to file paths when the project has no router at all', () => {
+    const tmp = createTempDir();
+    try {
+      writeFile(
+        tmp,
+        'idt.config.ts',
+        `export default { pageGlobs: ['src/views/**/*.vue'], localeFiles: [] };
+`,
+      );
+      writeFile(tmp, 'src/views/about/index.vue', '<template><div>关于我们</div></template>');
+
+      const topo = extractProjectTopology(tmp);
+      assert.ok(topo.routes['/about'], '没有 routerGlobs 时必须保留文件路径兜底');
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
 });

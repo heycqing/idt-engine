@@ -187,6 +187,35 @@ function defaultRun(command, args, cwd) {
   return result.status ?? 1;
 }
 
+/**
+ * 往业务方 package.json 写 idt 标志。已有标志不动——它可能带着手工调过的
+ * devCommand 和 port，覆盖掉就白调了。返回写入的项目名，没写返回 null。
+ */
+export function writeProjectMarker(hostRoot, projectRel, projectName) {
+  const projectDir = path.resolve(hostRoot, ...projectRel.split(/[\/]/));
+  const pkgPath = path.join(projectDir, 'package.json');
+  if (!fs.existsSync(pkgPath)) {
+    throw Object.assign(new Error(`项目没有 package.json：${projectDir}`), { exitCode: 2 });
+  }
+
+  const pkg = readJson(pkgPath);
+  if (pkg.idt && typeof pkg.idt === 'object' && !Array.isArray(pkg.idt)) {
+    return null;
+  }
+
+  const name = (projectName ?? path.basename(projectDir)).trim();
+  pkg.idt = { project: name };
+  writeJson(pkgPath, pkg);
+  return name;
+}
+
+/** pnpm 在 workspace 根目录执行 add 必须显式 -w，否则报 ERR_PNPM_ADDING_TO_ROOT。 */
+export function isPnpmWorkspaceRoot(hostRoot) {
+  return ['pnpm-workspace.yaml', 'pnpm-workspace.yml'].some((name) =>
+    fs.existsSync(path.join(hostRoot, name)),
+  );
+}
+
 function cliExists(dir) {
   return fs.existsSync(path.join(dir, 'scripts', 'idt', 'cli.ts'));
 }
@@ -199,6 +228,8 @@ export function parseArgs(argv) {
     noSubmodule: false,
     skipBrowsers: false,
     skipSync: false,
+    project: '',
+    projectName: '',
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -208,6 +239,8 @@ export function parseArgs(argv) {
     else if (arg === '--no-submodule') opts.noSubmodule = true;
     else if (arg === '--skip-browsers') opts.skipBrowsers = true;
     else if (arg === '--skip-sync') opts.skipSync = true;
+    else if (arg === '--project') opts.project = argv[++i] ?? '';
+    else if (arg === '--project-name') opts.projectName = argv[++i] ?? '';
     else if (arg === '--help' || arg === '-h') opts.help = true;
     else throw new Error(`未知参数 ${arg}`);
   }
@@ -277,6 +310,16 @@ export function linkHost(options) {
   }
   writeJson(pkgPath, pkg);
 
+  let markerWritten = null;
+  if (options.project) {
+    markerWritten = writeProjectMarker(hostRoot, options.project, options.projectName);
+    notes.push(
+      markerWritten
+        ? `写入标志 ${options.project}/package.json -> "idt": { "project": "${markerWritten}" }`
+        : `保留 ${options.project} 已有的 idt 标志`,
+    );
+  }
+
   const configPath = path.join(hostRoot, 'idt.config.ts');
   let configWritten = false;
   if (!fs.existsSync(configPath)) {
@@ -292,7 +335,9 @@ export function linkHost(options) {
     notes.push('保留已有 idt.config.ts');
   }
 
-  if (!pkg.scripts?.dev && !pkg.scripts?.start) {
+  // 多项目宿主的启动命令来自各项目标志的 devCommand，根目录没有 dev 脚本很正常。
+  const multiProject = fs.existsSync(path.join(hostRoot, 'apps'));
+  if (!pkg.scripts?.dev && !pkg.scripts?.start && !multiProject) {
     notes.push('宿主没有 dev 或 start 脚本。idt:sync 生成的 Playwright 配置会缺 webServer，--yes、test:e2e、idt:heal 在补上启动命令之前不要跑。');
   }
 
@@ -318,7 +363,10 @@ export function linkHost(options) {
       return version ? `${name}@${version}` : name;
     });
     log(`安装依赖：${specs.join(' ')}`);
-    installCode = run('pnpm', ['add', '-D', ...specs], hostRoot);
+    const addArgs = isPnpmWorkspaceRoot(hostRoot)
+      ? ['add', '-D', '-w', ...specs]
+      : ['add', '-D', ...specs];
+    installCode = run('pnpm', addArgs, hostRoot);
     if (installCode !== 0) notes.push('依赖安装失败。文件已经写好，可以在宿主里重新执行 pnpm add。');
   }
 
@@ -348,6 +396,7 @@ export function linkHost(options) {
     hostRoot,
     enginePosix,
     configWritten,
+    markerWritten,
     envExampleWritten,
     gitignoreAdded: merged.added,
     missing,
@@ -369,7 +418,9 @@ function printHelp() {
 --no-submodule  不把 GitHub 仓库加进宿主，直接指向 --engine
 --no-install    只写配置和脚本，不安装依赖、不扫描页面、不下载浏览器
 --skip-sync     不执行 idt:sync
---skip-browsers 不下载 Chromium`);
+--skip-browsers 不下载 Chromium
+--project <相对路径>   往该业务方 package.json 写 idt 标志，例如 apps/caida
+--project-name <名字>  标志里的项目名，默认取目录名`);
 }
 
 function main() {
@@ -403,6 +454,8 @@ function main() {
       noSubmodule: opts.noSubmodule,
       skipBrowsers: opts.skipBrowsers,
       skipSync: opts.skipSync,
+      project: opts.project || undefined,
+      projectName: opts.projectName || undefined,
     });
     const failed = result.installCode || result.syncCode || result.browserCode;
     process.exit(failed ? 1 : 0);

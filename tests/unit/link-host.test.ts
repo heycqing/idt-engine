@@ -217,4 +217,175 @@ describe('link-host', () => {
       fs.rmSync(host, { recursive: true, force: true });
     }
   });
+  it('adds -w when the host is a pnpm workspace root', () => {
+    const host = tempHost();
+    const engineRoot = path.resolve('D:\\mine-prop\\idt-engine');
+    try {
+      fs.writeFileSync(
+        path.join(host, 'package.json'),
+        JSON.stringify({ name: 'mono-root', scripts: { dev: 'vite' } }, null, 2),
+        'utf8',
+      );
+      // pnpm 在 workspace 根目录执行 add 时必须显式 -w，否则报
+      // ERR_PNPM_ADDING_TO_ROOT，依赖一个也装不上
+      fs.writeFileSync(path.join(host, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n', 'utf8');
+
+      const calls: string[][] = [];
+      linkHost({
+        hostRoot: host,
+        engineRoot,
+        noSubmodule: true,
+        skipSync: true,
+        skipBrowsers: true,
+        run: (_cmd, args) => {
+          calls.push(args);
+          return 0;
+        },
+      });
+
+      const add = calls.find((args) => args[0] === 'add');
+      assert.ok(add, `expected a pnpm add call, got ${JSON.stringify(calls)}`);
+      assert.ok(add.includes('-w'), `expected -w in ${add.join(' ')}`);
+    } finally {
+      fs.rmSync(host, { recursive: true, force: true });
+    }
+  });
+
+  it('does not add -w for a plain single-package host', () => {
+    const host = tempHost();
+    const engineRoot = path.resolve('D:\\mine-prop\\idt-engine');
+    try {
+      fs.writeFileSync(
+        path.join(host, 'package.json'),
+        JSON.stringify({ name: 'solo', scripts: { dev: 'vite' } }, null, 2),
+        'utf8',
+      );
+
+      const calls: string[][] = [];
+      linkHost({
+        hostRoot: host,
+        engineRoot,
+        noSubmodule: true,
+        skipSync: true,
+        skipBrowsers: true,
+        run: (_cmd, args) => {
+          calls.push(args);
+          return 0;
+        },
+      });
+
+      const add = calls.find((args) => args[0] === 'add');
+      assert.ok(add);
+      assert.equal(add.includes('-w'), false);
+    } finally {
+      fs.rmSync(host, { recursive: true, force: true });
+    }
+  });
+  it('writes the idt marker into a named project package', () => {
+    const host = tempHost();
+    const engineRoot = path.resolve('D:\\mine-prop\\idt-engine');
+    try {
+      fs.writeFileSync(
+        path.join(host, 'package.json'),
+        JSON.stringify({ name: 'mono-root' }, null, 2),
+        'utf8',
+      );
+      const appDir = path.join(host, 'apps', 'caida');
+      fs.mkdirSync(path.join(appDir, 'src', 'views'), { recursive: true });
+      fs.writeFileSync(
+        path.join(appDir, 'package.json'),
+        JSON.stringify({ name: '@trade/caida', scripts: { dev: 'vue-cli-service serve' } }, null, 2),
+        'utf8',
+      );
+
+      const result = linkHost({
+        hostRoot: host,
+        engineRoot,
+        noInstall: true,
+        noSubmodule: true,
+        project: 'apps/caida',
+        run: () => 0,
+      });
+
+      const appPkg = JSON.parse(fs.readFileSync(path.join(appDir, 'package.json'), 'utf8'));
+      assert.deepEqual(appPkg.idt, { project: 'caida' });
+      assert.equal(appPkg.name, '@trade/caida', '不能动包的其他字段');
+      assert.equal(result.markerWritten, 'caida');
+    } finally {
+      fs.rmSync(host, { recursive: true, force: true });
+    }
+  });
+
+  it('honours an explicit project name and keeps an existing marker untouched', () => {
+    const host = tempHost();
+    const engineRoot = path.resolve('D:\\mine-prop\\idt-engine');
+    try {
+      fs.writeFileSync(path.join(host, 'package.json'), JSON.stringify({ name: 'root' }), 'utf8');
+      const appDir = path.join(host, 'apps', 'yk');
+      fs.mkdirSync(appDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(appDir, 'package.json'),
+        JSON.stringify({ name: '@trade/yuekai' }, null, 2),
+        'utf8',
+      );
+
+      linkHost({
+        hostRoot: host,
+        engineRoot,
+        noInstall: true,
+        noSubmodule: true,
+        project: 'apps/yk',
+        projectName: 'yuekai',
+        run: () => 0,
+      });
+      let appPkg = JSON.parse(fs.readFileSync(path.join(appDir, 'package.json'), 'utf8'));
+      assert.deepEqual(appPkg.idt, { project: 'yuekai' });
+
+      // 已有标志（带 devCommand/port）不能被覆盖掉
+      appPkg.idt = { project: 'yuekai', devCommand: 'pnpm dev:yk', port: 8081 };
+      fs.writeFileSync(path.join(appDir, 'package.json'), JSON.stringify(appPkg, null, 2), 'utf8');
+
+      const second = linkHost({
+        hostRoot: host,
+        engineRoot,
+        noInstall: true,
+        noSubmodule: true,
+        project: 'apps/yk',
+        run: () => 0,
+      });
+      appPkg = JSON.parse(fs.readFileSync(path.join(appDir, 'package.json'), 'utf8'));
+      assert.deepEqual(appPkg.idt, { project: 'yuekai', devCommand: 'pnpm dev:yk', port: 8081 });
+      assert.equal(second.markerWritten, null);
+    } finally {
+      fs.rmSync(host, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves every package alone when no project is given', () => {
+    const host = tempHost();
+    const engineRoot = path.resolve('D:\\mine-prop\\idt-engine');
+    try {
+      fs.writeFileSync(path.join(host, 'package.json'), JSON.stringify({ name: 'root' }), 'utf8');
+      const appDir = path.join(host, 'apps', 'caida');
+      fs.mkdirSync(appDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(appDir, 'package.json'),
+        JSON.stringify({ name: '@trade/caida' }, null, 2),
+        'utf8',
+      );
+
+      const result = linkHost({
+        hostRoot: host,
+        engineRoot,
+        noInstall: true,
+        noSubmodule: true,
+        run: () => 0,
+      });
+      const appPkg = JSON.parse(fs.readFileSync(path.join(appDir, 'package.json'), 'utf8'));
+      assert.equal(appPkg.idt, undefined);
+      assert.equal(result.markerWritten, null);
+    } finally {
+      fs.rmSync(host, { recursive: true, force: true });
+    }
+  });
 });

@@ -20,7 +20,7 @@ export interface ReplayPage {
 
 export async function replayUntil(
   ir: StateTransitionIR,
-  target: { stageIndex: number; actionIndex: number },
+  target: { stageIndex: number; actionIndex: number; kind?: 'action' | 'routeGuard' },
   page: ReplayPage,
   router: RouterUrlOptions = DEFAULT_ROUTER_URL_OPTIONS,
 ): Promise<string> {
@@ -58,8 +58,11 @@ export async function replayUntil(
     }
 
     // Execute actions in emission order
+    // routeGuard 目标要把本 stage 的动作跑完再取快照，所以不在动作处停
+    const stopAtAction = target.kind !== 'routeGuard';
+
     for (const actionIndex of emissionIndices) {
-      if (stageIdx === target.stageIndex && actionIndex === target.actionIndex) {
+      if (stopAtAction && stageIdx === target.stageIndex && actionIndex === target.actionIndex) {
         // Stop at failure action. Do not execute the failure action itself.
         // Stage containing failure action does not execute route guard.
         return await page.ariaSnapshot();
@@ -94,10 +97,18 @@ export async function replayUntil(
 
     // When all actions in this stage precede the failure action,
     // if this stage has routeGuard, call page.waitForURL
-    if (stageIdx < target.stageIndex && stage.invariants.routeGuard) {
+    const isGuardTarget =
+      target.kind === 'routeGuard' && stageIdx === target.stageIndex;
+
+    if ((stageIdx < target.stageIndex || isGuardTarget) && stage.invariants.routeGuard) {
       const guard = stage.invariants.routeGuard;
       const timeout = triggerIndex >= 0 ? stage.actions[triggerIndex].timeoutMs : 5000;
       await page.waitForURL(toGuardPattern(guard.targetUrlPattern, router), timeout);
+    }
+
+    // ready 断言就在 waitForURL 之后，此刻的页面状态正是要比对的那一帧
+    if (isGuardTarget) {
+      return await page.ariaSnapshot();
     }
   }
 
