@@ -27,6 +27,7 @@ import {
   type VueTemplateScan,
 } from './vue-sfc.js';
 import { extractVueRouterMappings } from './vue-router.js';
+import { collectComponentTransitions } from './component-nav.js';
 
 function isFunctionNode(node: Node): boolean {
   return (
@@ -152,6 +153,11 @@ export interface ExtractTopologyOptions {
   routerMode?: 'hash' | 'history';
   routerBase?: string;
   routerQuery?: Record<string, string>;
+  /**
+   * 顺页面的 import 往下几层收集子组件里的跳转。默认 1。
+   * 0 表示关闭，退回只扫页面文件自身的旧行为。
+   */
+  componentNavDepth?: number;
 }
 
 export function extractProjectTopology(
@@ -293,6 +299,18 @@ export function extractProjectTopology(
 
   const routes: Record<string, RouteTopologyNode> = {};
   const semanticIndexMap = new Map<string, SemanticIndexEntry>();
+  const componentNavDepth = options.componentNavDepth ?? 1;
+  // 只排除真的会成为路由的文件。被 pageGlobs 命中但落在 components/ 下的
+  // 不是页面，恰恰是要顺着 import 走进去的那些。
+  const allPageFiles = new Set(
+    fileItems
+      .filter(
+        (i) =>
+          routerMappings.routesByComponent.has(path.resolve(i.absPath)) ||
+          toRoutePattern(projectRoot, i.absPath) !== null,
+      )
+      .map((i) => path.resolve(i.absPath)),
+  );
 
   for (const item of fileItems) {
     if (item.relPosix.split('/').some((segment) => segment.includes('[...'))) {
@@ -541,6 +559,21 @@ export function extractProjectTopology(
           triggerElementText: link.text,
           codeSlice: createCodeSlice(null),
         });
+      }
+    }
+
+    // 页面的跳转大多写在子组件里。顺 import 往下收集，已有的目标不重复加。
+    if (componentNavDepth > 0) {
+      const already = new Set(transitions.map((t) => t.targetRoute));
+      for (const extra of collectComponentTransitions(
+        projectRoot,
+        item.absPath,
+        allPageFiles,
+        componentNavDepth,
+      )) {
+        if (already.has(extra.targetRoute)) continue;
+        already.add(extra.targetRoute);
+        transitions.push(extra);
       }
     }
 

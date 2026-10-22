@@ -864,4 +864,95 @@ ${paddingLines}
       removeTempDir(tmp);
     }
   });
+  it('attributes child component navigation to the page', () => {
+    const tmp = createTempDir();
+    try {
+      writeFile(
+        tmp,
+        'idt.config.ts',
+        `export default { pageGlobs: ['src/views/**/*.vue'], localeFiles: [] };
+`,
+      );
+      writeFile(
+        tmp,
+        'src/views/home/index.vue',
+        `<template><Card /></template>
+         <script>import Card from './components/Card.vue';</script>`,
+      );
+      writeFile(
+        tmp,
+        'src/views/home/components/Card.vue',
+        `<template><div @click="go">去明细</div></template>
+         <script>export default { methods: { go() { this.$router.push('/detail'); } } };</script>`,
+      );
+      writeFile(tmp, 'src/views/detail/index.vue', '<template><div>明细</div></template>');
+
+      const topo = extractProjectTopology(tmp);
+      const targets = topo.routes['/home'].transitions.map((t) => t.targetRoute);
+      assert.deepEqual(targets, ['/detail']);
+      assert.equal(topo.routes['/home'].transitions[0].triggerElementText, '去明细');
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
+  it('can be turned off, restoring the page-only behaviour', () => {
+    const tmp = createTempDir();
+    try {
+      writeFile(
+        tmp,
+        'idt.config.ts',
+        `export default { pageGlobs: ['src/views/**/*.vue'], localeFiles: [] };
+`,
+      );
+      writeFile(
+        tmp,
+        'src/views/home/index.vue',
+        `<script>import Card from './components/Card.vue';</script>`,
+      );
+      writeFile(
+        tmp,
+        'src/views/home/components/Card.vue',
+        `<script>export default { methods: { go() { this.$router.push('/detail'); } } };</script>`,
+      );
+      writeFile(tmp, 'src/views/detail/index.vue', '<template><div>明细</div></template>');
+
+      const topo = extractProjectTopology(tmp, { componentNavDepth: 0 });
+      assert.deepEqual(topo.routes['/home'].transitions, []);
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
+  it('does not duplicate a target the page already navigates to itself', () => {
+    const tmp = createTempDir();
+    try {
+      writeFile(
+        tmp,
+        'idt.config.ts',
+        `export default { pageGlobs: ['src/views/**/*.vue'], localeFiles: [] };
+`,
+      );
+      writeFile(
+        tmp,
+        'src/views/home/index.vue',
+        `<script>import Card from './components/Card.vue';
+         export default { methods: { go() { this.$router.push('/detail'); } } };</script>`,
+      );
+      writeFile(
+        tmp,
+        'src/views/home/components/Card.vue',
+        `<script>export default { methods: { go() { this.$router.push('/detail'); } } };</script>`,
+      );
+      writeFile(tmp, 'src/views/detail/index.vue', '<template><div>明细</div></template>');
+
+      const topo = extractProjectTopology(tmp);
+      assert.equal(
+        topo.routes['/home'].transitions.filter((t) => t.targetRoute === '/detail').length,
+        1,
+      );
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
 });
