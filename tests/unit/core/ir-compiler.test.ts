@@ -564,4 +564,55 @@ describe('ir-compiler', () => {
       removeTempDir(tmp);
     }
   });
+  it('pins the route when one is given, skipping keyword matching', async () => {
+    const tmp = createTempDir();
+    try {
+      setupCartFixture(tmp);
+
+      let payload: any = null;
+      const model: ModelClient = {
+        async complete(req) {
+          payload = JSON.parse(req.messages[0].content);
+          const ir = createValidModelIr();
+          ir.initialRoute = '/checkout';
+          ir.stages = [ir.stages[1]];
+          ir.stages[0].stageIndex = 0;
+          return JSON.stringify(ir);
+        },
+      };
+
+      // 意图里一个关键词都不沾，正常匹配必然失败；给了 route 就不该走匹配
+      const ir = await compileIntent({
+        projectRoot: tmp,
+        intent: 'zzzz 完全无关的意图',
+        route: '/checkout',
+        model,
+      });
+
+      assert.deepEqual(payload.routeFlow, ['/checkout']);
+      assert.deepEqual(payload.pages.map((p: any) => p.route), ['/checkout']);
+      assert.equal(ir.initialRoute, '/checkout');
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
+  it('rejects a pinned route that is not in the topology', async () => {
+    const tmp = createTempDir();
+    try {
+      setupCartFixture(tmp);
+      const model: ModelClient = { async complete() { return '{}'; } };
+
+      await assert.rejects(
+        compileIntent({ projectRoot: tmp, intent: '随便', route: '/nope', model }),
+        (err: any) => {
+          assert.equal(err.exitCode, 2);
+          assert.match(err.message, /\/nope/);
+          return true;
+        },
+      );
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
 });

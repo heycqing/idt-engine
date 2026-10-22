@@ -144,6 +144,95 @@ program
   );
 
 program
+  .command('batch')
+  .description('Generate one spec per route, skipping intent matching')
+  .option('--project <name>', 'IDT project to generate for')
+  .option('--limit <n>', 'Stop after this many routes', (v) => Number(v))
+  .option('--filter <substring>', 'Only routes whose path contains this')
+  .option('--force', 'Overwrite existing IR and spec')
+  .action(async (options: {
+    project?: string;
+    limit?: number;
+    filter?: string;
+    force?: boolean;
+  }) => {
+    try {
+      const { env, projects } = workspace();
+      const credentials = requireModelCredentials(env);
+      const project = pick(projects, options.project);
+      if (!project.implicit) console.log(`项目 ${project.name}`);
+
+      const topologyPath = path.resolve(project.root, '.idt', 'topology.json');
+      if (!fs.existsSync(topologyPath)) {
+        console.error('还没有拓扑，先执行 idt:sync');
+        process.exit(2);
+      }
+      const topology = JSON.parse(fs.readFileSync(topologyPath, 'utf8'));
+
+      // 只挑有确定名字元素的路由：没有可断言的东西，生成出来也是废的
+      let routes = Object.entries(topology.routes as Record<string, any>)
+        .filter(([, node]) =>
+          (node.elements ?? []).some((e: any) => typeof e.name === 'string'),
+        )
+        .map(([route]) => route)
+        .sort();
+      if (options.filter) {
+        routes = routes.filter((r) => r.includes(options.filter!));
+      }
+      if (options.limit && options.limit > 0) {
+        routes = routes.slice(0, options.limit);
+      }
+
+      if (routes.length === 0) {
+        console.error('没有可生成的路由（需要至少一个有确定名字的元素）');
+        process.exit(2);
+      }
+
+      const client = new OpenAiClient({
+        apiKey: credentials.apiKey,
+        baseUrl: credentials.baseUrl,
+        modelName: credentials.modelName,
+      });
+
+      console.log(`准备为 ${routes.length} 条路由生成 spec`);
+      console.log();
+      const failures: Array<{ route: string; reason: string }> = [];
+      let ok = 0;
+
+      for (const [i, route] of routes.entries()) {
+        const label = `[${i + 1}/${routes.length}] ${route}`;
+        try {
+          await generateFlow({
+            projectRoot: project.root,
+            intent: `打开 ${route} 页面并确认页面已就绪`,
+            route,
+            model: client,
+            force: options.force,
+            extract: extractOptions(project),
+            log: () => {},
+          });
+          ok += 1;
+          console.log(`${label}  ok`);
+        } catch (err: any) {
+          const reason = String(err?.message ?? err).split('\n')[0].slice(0, 110);
+          failures.push({ route, reason });
+          console.log(`${label}  跳过：${reason}`);
+        }
+      }
+
+      console.log();
+      console.log(`生成成功 ${ok} / ${routes.length}`);
+      if (failures.length > 0) {
+        console.log('未生成的路由：');
+        for (const f of failures) console.log(`  ${f.route}  ${f.reason}`);
+      }
+      process.exit(0);
+    } catch (err: any) {
+      fail(err);
+    }
+  });
+
+program
   .command('emit <ir>')
   .description('Emit Playwright spec from State Transition IR')
   .option('--project <name>', 'IDT project the IR belongs to')

@@ -16,6 +16,7 @@ export interface GenerateFlowOptions {
   runSpec?: (specPath: string) => Promise<{ exitCode: number; report: unknown }>;
   log?: (line: string) => void;
   extract?: ExtractTopologyOptions;
+  route?: string;
 }
 
 export async function generateFlow(options: {
@@ -28,8 +29,9 @@ export async function generateFlow(options: {
   runSpec?: (specPath: string) => Promise<{ exitCode: number; report: unknown }>;
   log?: (line: string) => void;
   extract?: ExtractTopologyOptions;
+  route?: string;
 }): Promise<{ exitCode: number; specPath: string }> {
-  const { projectRoot, intent, proseCase, model, force, yes, runSpec, extract } = options;
+  const { projectRoot, intent, proseCase, model, force, yes, runSpec, extract, route } = options;
   const log = options.log ?? console.log;
 
   // 1. Compile intent - rethrow error as-is, do not write spec
@@ -40,6 +42,7 @@ export async function generateFlow(options: {
     model,
     force,
     extract,
+    route,
   });
 
   // 2. Emit spec and write to tests/e2e/generated/<flowId>.spec.ts

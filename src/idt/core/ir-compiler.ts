@@ -74,19 +74,34 @@ export interface CompileIntentOptions {
   force?: boolean;
   /** 多项目模式下项目根没有 idt.config.ts，globs 必须由调用方给。 */
   extract?: ExtractTopologyOptions;
+  /**
+   * 直接钉住路由，跳过关键词匹配与寻径。批量生成时用——按路由遍历比靠
+   * 意图措辞去猜可靠得多，也绕开了关键词碰撞。
+   */
+  route?: string;
 }
 
 export async function compileIntent(
   options: CompileIntentOptions
 ): Promise<StateTransitionIR> {
-  const { projectRoot, intent, proseCase, model, force, extract } = options;
+  const { projectRoot, intent, proseCase, model, force, extract, route } = options;
 
   // 1. Extract project topology and read semantic index
   const topology = extractProjectTopology(projectRoot, extract);
   const semanticIndex = readSemanticIndex(projectRoot);
 
-  // 2. Find route path
-  const { routePath } = findRoutePath(topology, semanticIndex, intent);
+  // 2. Find route path（钉了路由就不走匹配）
+  let routePath: string[];
+  if (route) {
+    if (!topology.routes[route]) {
+      const error = new Error(`拓扑里没有路由 "${route}"。先跑 idt:sync，或检查路由写法。`);
+      (error as any).exitCode = 2;
+      throw error;
+    }
+    routePath = [route];
+  } else {
+    routePath = findRoutePath(topology, semanticIndex, intent).routePath;
+  }
 
   // Check target file conflicts early
   const flowId = flowIdFromIntent(intent);
