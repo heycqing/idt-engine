@@ -22,6 +22,9 @@ export function renderProjectPlaywrightConfig(project: IdtProject): string {
     // Playwright 默认把 cwd 设成配置文件所在目录，也就是 .idt/，
     // 启动命令在那里跑找不到项目的 package.json。回到项目根。
     cwd: '..',
+    // 只写期待端口不够：vue-cli 之类发现端口忙会自己加一，
+    // 配置等 8080、服务器起在 8081，必然超时。PORT 是通用约定。
+    env: { ...process.env, PORT: String(port) },
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     // 老的 webpack 应用冷编译可能要好几分钟。等不起时用 IDT_BASE_URL

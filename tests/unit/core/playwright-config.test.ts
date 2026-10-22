@@ -54,6 +54,14 @@ describe('project playwright config', () => {
     );
   });
 
+  it('tells the dev server which port to bind', () => {
+    // 只在配置里写期待端口是不够的：vue-cli 发现端口忙会自增，
+    // 于是配置等 8080、服务器起在 8081，必然超时。PORT 是 vue-cli、
+    // next、vite 都认的约定。
+    const source = renderProjectPlaywrightConfig(project());
+    assert.match(source, /env: *\{[^}]*PORT: *String\(port\)/);
+  });
+
   it('omits webServer when the project declares no dev command', () => {
     const source = renderProjectPlaywrightConfig(project({ devCommand: undefined }));
     assert.equal(source.includes('webServer'), false);
