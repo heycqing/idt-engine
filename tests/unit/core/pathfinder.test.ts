@@ -293,4 +293,137 @@ describe('pathfinder', () => {
     assert.equal(res.start, '/goods');
     assert.equal(res.end, '/goods/:id');
   });
+  it('drops a candidate whose matched keywords are all matched by another candidate', () => {
+    // 真实宿主上踩到的：意图里的"全部"同时命中融资页和融券页，而融券页只命中
+    // 这一个词、融资页还命中了"拟调整融资额度"。融券页没提供任何新信息，
+    // 却把寻径变成了一次注定失败的跨页搜索。
+    const topology: ProjectTopology = {
+      version: '1.0.0',
+      generatedAt: '2026-10-21T00:00:00.000Z',
+      sourceDigest: 'a'.repeat(64),
+      routes: {
+        '/credit/amount/finance': {
+          path: '/credit/amount/finance',
+          filePath: 'src/views/finance/index.vue',
+          title: 'index',
+          semanticKeywords: ['拟调整融资额度', '全部'],
+          dynamicParams: [],
+          transitions: [],
+          elements: [],
+        },
+        '/credit/amount/securities': {
+          path: '/credit/amount/securities',
+          filePath: 'src/views/securities/index.vue',
+          title: 'index',
+          semanticKeywords: ['全部'],
+          dynamicParams: [],
+          transitions: [],
+          elements: [],
+        },
+      },
+    };
+    const semanticIndex: SemanticIndex = {
+      version: '1.0.0',
+      sourceDigest: 'a'.repeat(64),
+      entries: [
+        { keyword: '拟调整融资额度', route: '/credit/amount/finance', kind: 'text' },
+        { keyword: '全部', route: '/credit/amount/finance', kind: 'text' },
+        { keyword: '全部', route: '/credit/amount/securities', kind: 'text' },
+      ],
+    };
+
+    const result = findRoutePath(topology, semanticIndex, '打开拟调整融资额度页面并点击全部按钮');
+    assert.deepEqual(result.routePath, ['/credit/amount/finance']);
+    assert.deepEqual(result.candidates, ['/credit/amount/finance']);
+  });
+
+  it('keeps genuinely distinct candidates so multi-page flows still work', () => {
+    const topology: ProjectTopology = {
+      version: '1.0.0',
+      generatedAt: '2026-10-21T00:00:00.000Z',
+      sourceDigest: 'b'.repeat(64),
+      routes: {
+        '/cart': {
+          path: '/cart',
+          filePath: 'src/views/cart/index.vue',
+          title: 'index',
+          semanticKeywords: ['购物车'],
+          dynamicParams: [],
+          transitions: [
+            { targetRoute: '/checkout', triggerType: 'CLICK', codeSlice: 'go()' },
+          ],
+          elements: [],
+        },
+        '/checkout': {
+          path: '/checkout',
+          filePath: 'src/views/checkout/index.vue',
+          title: 'index',
+          semanticKeywords: ['结算'],
+          dynamicParams: [],
+          transitions: [],
+          elements: [],
+        },
+      },
+    };
+    const semanticIndex: SemanticIndex = {
+      version: '1.0.0',
+      sourceDigest: 'b'.repeat(64),
+      entries: [
+        { keyword: '购物车', route: '/cart', kind: 'text' },
+        { keyword: '结算', route: '/checkout', kind: 'text' },
+      ],
+    };
+
+    const result = findRoutePath(topology, semanticIndex, '从购物车去结算');
+    assert.deepEqual(result.routePath, ['/cart', '/checkout']);
+  });
+
+  it('explains which keyword pulled in each candidate when no path exists', () => {
+    const topology: ProjectTopology = {
+      version: '1.0.0',
+      generatedAt: '2026-10-21T00:00:00.000Z',
+      sourceDigest: 'c'.repeat(64),
+      routes: {
+        '/home': {
+          path: '/home',
+          filePath: 'src/views/home/index.vue',
+          title: 'index',
+          semanticKeywords: ['账户资金及盈亏'],
+          dynamicParams: [],
+          transitions: [],
+          elements: [],
+        },
+        '/transfer/today': {
+          path: '/transfer/today',
+          filePath: 'src/views/transfer/today/index.vue',
+          title: 'index',
+          semanticKeywords: ['操作'],
+          dynamicParams: [],
+          transitions: [],
+          elements: [],
+        },
+      },
+    };
+    const semanticIndex: SemanticIndex = {
+      version: '1.0.0',
+      sourceDigest: 'c'.repeat(64),
+      entries: [
+        { keyword: '账户资金及盈亏', route: '/home', kind: 'text' },
+        { keyword: '操作', route: '/transfer/today', kind: 'text' },
+      ],
+    };
+
+    assert.throws(
+      () => findRoutePath(topology, semanticIndex, '打开账户资金及盈亏页面，不要执行任何操作'),
+      (err: any) => {
+        assert.equal(err.exitCode, 2);
+        // 必须说清每个候选是被哪个词拉进来的，否则使用者无从下手
+        assert.match(err.message, /\/home/);
+        assert.match(err.message, /账户资金及盈亏/);
+        assert.match(err.message, /\/transfer\/today/);
+        assert.match(err.message, /操作/);
+        return true;
+      },
+    );
+  });
 });

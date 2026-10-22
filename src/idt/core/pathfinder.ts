@@ -82,9 +82,49 @@ export function findRoutePath(
     }
   }
 
+  // 命中词集合是另一个候选真子集的，没有提供任何新信息，只会把寻径变成一次
+  // 注定失败的跨页搜索。典型例子：意图里的"全部"同时命中融资页和融券页，而
+  // 融券页只命中这一个词。这条规则是可证明的，不靠长度之类的启发式——否则
+  // "从购物车去结算"这种真实跨页流程会被误砍成单页。
+  const matchedByRoute = new Map<string, Set<string>>();
+  for (const routeKey of candidateScores.keys()) {
+    const hits = new Set(hitKeywordsByRoute.get(routeKey) ?? []);
+    const node = topology.routes[routeKey];
+    if (node?.title && node.title.trim().length >= 2 && intent.includes(node.title)) {
+      hits.add(node.title);
+    }
+    matchedByRoute.set(routeKey, hits);
+  }
+
+  const isProperSubset = (a: Set<string>, b: Set<string>): boolean =>
+    a.size < b.size && [...a].every((item) => b.has(item));
+
+  const redundant = new Set<string>();
+  for (const [routeKey, hits] of matchedByRoute) {
+    for (const [otherKey, otherHits] of matchedByRoute) {
+      if (routeKey === otherKey || redundant.has(otherKey)) continue;
+      if (isProperSubset(hits, otherHits)) {
+        redundant.add(routeKey);
+        break;
+      }
+    }
+  }
+  for (const routeKey of redundant) {
+    candidateScores.delete(routeKey);
+    candidateMinIndices.delete(routeKey);
+  }
+
   const candidates = Array.from(candidateScores.keys()).sort((a, b) =>
     a.localeCompare(b)
   );
+
+  const describeCandidates = (): string =>
+    candidates
+      .map((routeKey) => {
+        const hits = [...(matchedByRoute.get(routeKey) ?? [])].sort();
+        return `  ${routeKey}  ← ${hits.join('、') || '（无）'}`;
+      })
+      .join('\n');
 
   if (candidates.length === 0) {
     const error = new Error(
@@ -171,7 +211,13 @@ export function findRoutePath(
 
   if (!foundPath) {
     const error = new Error(
-      `Cannot find route path from "${start}" to "${end}"`
+      [
+        '意图匹配到多个互不连通的页面，无法确定要测哪条流程。',
+        `起点 "${start}" 到终点 "${end}" 之间没有可达路径。`,
+        '候选页面与把它们匹配进来的词：',
+        describeCandidates(),
+        '如果上面有词只是意图里的顺带措辞（而不是在指某个页面），换个说法去掉它再试。',
+      ].join('\n'),
     );
     (error as any).exitCode = 2;
     throw error;
