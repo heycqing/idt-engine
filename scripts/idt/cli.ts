@@ -24,6 +24,7 @@ import { OpenAiClient } from '../../src/idt/core/openai-client.js';
 import { emitIrFile } from '../../src/idt/core/emitter.js';
 import { heal } from '../../src/idt/core/healer.js';
 import { playwrightCliEntry } from '../../src/idt/core/runner.js';
+import { selectBatchRoutes } from '../../src/idt/core/batch-routes.js';
 
 const program = new Command();
 
@@ -149,11 +150,13 @@ program
   .option('--project <name>', 'IDT project to generate for')
   .option('--limit <n>', 'Stop after this many routes', (v) => Number(v))
   .option('--filter <substring>', 'Only routes whose path contains this')
+  .option('--exclude <substrings>', 'Skip routes containing any of these (comma separated)')
   .option('--force', 'Overwrite existing IR and spec')
   .action(async (options: {
     project?: string;
     limit?: number;
     filter?: string;
+    exclude?: string;
     force?: boolean;
   }) => {
     try {
@@ -169,19 +172,11 @@ program
       }
       const topology = JSON.parse(fs.readFileSync(topologyPath, 'utf8'));
 
-      // 只挑有确定名字元素的路由：没有可断言的东西，生成出来也是废的
-      let routes = Object.entries(topology.routes as Record<string, any>)
-        .filter(([, node]) =>
-          (node.elements ?? []).some((e: any) => typeof e.name === 'string'),
-        )
-        .map(([route]) => route)
-        .sort();
-      if (options.filter) {
-        routes = routes.filter((r) => r.includes(options.filter!));
-      }
-      if (options.limit && options.limit > 0) {
-        routes = routes.slice(0, options.limit);
-      }
+      const routes = selectBatchRoutes(topology, {
+        filter: options.filter,
+        exclude: options.exclude,
+        limit: options.limit,
+      });
 
       if (routes.length === 0) {
         console.error('没有可生成的路由（需要至少一个有确定名字的元素）');
