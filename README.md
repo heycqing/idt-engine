@@ -91,6 +91,13 @@ apps/yuekai/.idt/...
 
 `pnpm idt projects` 列出发现到的项目和它们的 globs。
 
+`idt batch` 按路由遍历生成，跳过意图匹配，只挑至少有一个确定名字元素的路由。
+宿主对某类路由有准入限制时用 `--exclude` 排掉，省下无谓的模型调用。
+
+**Git Bash 用户注意**：MSYS 会把以 `/` 开头的参数当成路径改写，
+`--exclude '/credit'` 到手会变成 `C:/Program Files/Git/credit`。写成
+`--exclude=credit` 或 `--exclude=credit,trade/home`，去掉前导斜杠。
+
 一个标志都没有时退化为单项目，项目根就是 IDT 根目录，产物路径和行为与引入本机制之前完全一致。
 
 ## Hash 路由
@@ -112,6 +119,7 @@ IR 本身只存应用路由，不带 `#`。同一条 IR 在宿主从 hash 换成
 - 从 IR 写出 spec：`pnpm idt:emit <ir路径>`（不需要安装 Playwright）
 - 自愈失败 spec：`pnpm idt:heal <spec路径>`
 - 同步拓扑与语义索引：`pnpm idt:sync`（多项目宿主默认同步全部，`--project <name>` 只同步一个）
+- 按路由批量生成：`pnpm idt batch [--project <name>] [--limit <n>] [--filter <子串>] [--exclude <子串,子串>]`
 - 运行某个项目的端到端测试：`pnpm idt test [spec...] [--project <name>] [playwright 参数]`
 - 列出发现到的 IDT 项目：`pnpm idt projects`
 - 运行单元测试套件：`pnpm test:idt`（单测在 `tests/unit/`，不访问网络，也不启动浏览器）
