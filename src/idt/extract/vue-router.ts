@@ -96,9 +96,26 @@ export function extractVueRouterMappings(
 }
 
 /**
+ * 这个对象字面量是不是 new VueRouter(...) 的第一个参数。
+ *
+ * 只有构造参数那一层才带得上 Vue Router 3 的默认值，别的对象字面量
+ * 缺 mode 只是普通对象，不能当成 hash。
+ */
+function isVueRouterArgument(object: Node): boolean {
+  const parent = object.getParent();
+  if (!parent || !Node.isNewExpression(parent)) return false;
+  if (parent.getArguments()[0] !== object) return false;
+  return /(^|\.)VueRouter$/.test(parent.getExpression().getText());
+}
+
+/**
  * 认 new VueRouter({ mode }) 和 createRouter({ history: createWebHashHistory() })。
  * mode 写成变量或三元就不猜，base 只认字符串字面量。
  * 注释掉的 router 不会被解析成节点，所以天然不参与判断。
+ *
+ * new VueRouter 完全不写 mode 时判 hash——那是 Vue Router 3 的默认值，
+ * 属于"明确知道"而不是"测不出"。createRouter 的 history 是必填参数，
+ * 不存在同样的歧义，所以不给它默认值。
  */
 function detectRouterMode(
   sourceFile: SourceFile,
@@ -109,6 +126,7 @@ function detectRouterMode(
 
   for (const object of sourceFile.getDescendantsOfKind(SyntaxKind.ObjectLiteralExpression)) {
     const mode = readStringProperty(object, 'mode');
+    const modeExpr = readPropertyExpression(object, 'mode');
     const historyExpr = readPropertyExpression(object, 'history');
 
     let found: 'hash' | 'history' | null = null;
@@ -118,6 +136,9 @@ function detectRouterMode(
       const text = historyExpr.getText();
       if (text.includes('createWebHashHistory')) found = 'hash';
       else if (text.includes('createWebHistory')) found = 'history';
+    } else if (!modeExpr && isVueRouterArgument(object)) {
+      // 一个 mode 键都没有，不是看不懂而是用了默认值。
+      found = 'hash';
     }
     if (!found) continue;
 

@@ -21,10 +21,20 @@ import {
 } from '../../src/idt/core/playwright-config.js';
 import { generateFlow } from '../../src/idt/core/generate.js';
 import { OpenAiClient } from '../../src/idt/core/openai-client.js';
-import { emitIrFile } from '../../src/idt/core/emitter.js';
+import { emitIrFile, emitSpec } from '../../src/idt/core/emitter.js';
 import { heal } from '../../src/idt/core/healer.js';
 import { playwrightCliEntry } from '../../src/idt/core/runner.js';
 import { selectBatchRoutes } from '../../src/idt/core/batch-routes.js';
+import { readRouterOptions } from '../../src/idt/core/route-url.js';
+import {
+  verifyCases,
+  type VerifyCase,
+  type VerifyFinding,
+} from '../../src/idt/core/verify.js';
+import {
+  StateTransitionIRSchema,
+  type StateTransitionIR,
+} from '../../src/idt/core/ir-schema.js';
 
 const program = new Command();
 
@@ -57,6 +67,8 @@ function extractOptions(project: IdtProject) {
     },
     projectName: project.implicit ? undefined : project.name,
     routerQuery: project.urlQuery,
+    routerMode: project.routerMode,
+    routerBase: project.routerBase,
   };
 }
 
@@ -238,6 +250,133 @@ program
       const result = emitIrFile(project.root, path.resolve(process.cwd(), ir));
       console.log(`Successfully emitted spec: ${result.specPath}`);
       process.exit(0);
+    } catch (err: any) {
+      fail(err);
+    }
+  });
+
+program
+  .command('verify')
+  .description('Verify generated specs against current source topology')
+  .option('--project <name>', 'Only verify this project')
+  .option('--strict', 'Treat warnings as failures')
+  .action((options: { project?: string; strict?: boolean }) => {
+    try {
+      const { projects } = workspace();
+      const targets = options.project ? [pick(projects, options.project)] : projects;
+
+      // 全部项目先过配置门槛，避免输出半份报告后才以配置错误退出。
+      for (const project of targets) {
+        const topologyPath = path.resolve(project.root, '.idt', 'topology.json');
+        if (!fs.existsSync(topologyPath)) {
+          const label = project.implicit ? '' : `[${project.name}] `;
+          console.error(`${label}还没有拓扑，先执行 idt:sync`);
+          process.exit(2);
+        }
+      }
+
+      let errorCount = 0;
+      let warningCount = 0;
+      let caseCount = 0;
+
+      for (const project of targets) {
+        const topologyPath = path.resolve(project.root, '.idt', 'topology.json');
+        const topology = JSON.parse(fs.readFileSync(topologyPath, 'utf8'));
+        const generatedDir = path.resolve(project.root, 'tests', 'e2e', 'generated');
+        const entries = fs.existsSync(generatedDir)
+          ? fs.readdirSync(generatedDir, { withFileTypes: true })
+          : [];
+        const irFiles = entries
+          .filter((entry) => entry.isFile() && entry.name.endsWith('.ir.json'))
+          .map((entry) => entry.name)
+          .sort();
+        const specFiles = entries
+          .filter((entry) => entry.isFile() && entry.name.endsWith('.spec.ts'))
+          .map((entry) => entry.name)
+          .sort();
+        const irNames = new Set(irFiles);
+
+        // verify 的职责就是发现 IR 有问题，所以它不能被坏 IR 打崩。
+        // 走 schema 而不是裸 JSON.parse：unresolved 这类带 .default() 的字段
+        // 在输入里可以缺省，裸读会得到 undefined，后面一取 .length 就炸。
+        const cases: VerifyCase[] = [];
+        const preFindings: VerifyFinding[] = [];
+        for (const fileName of irFiles) {
+          const stem = fileName.slice(0, -'.ir.json'.length);
+          let parsed: StateTransitionIR;
+          try {
+            const raw = JSON.parse(
+              fs.readFileSync(path.join(generatedDir, fileName), 'utf8'),
+            );
+            const result = StateTransitionIRSchema.safeParse(raw);
+            if (!result.success) {
+              preFindings.push({
+                level: 'error',
+                code: 'invalid-ir',
+                flowId: typeof raw?.flowId === 'string' ? raw.flowId : stem,
+                message:
+                  `${fileName} 不符合 IR schema：`
+                  + `${result.error.issues
+                    .map((issue) => `${issue.path.join('.') || '(根)'} ${issue.message}`)
+                    .join('；')}。已跳过这条用例。`,
+              });
+              continue;
+            }
+            parsed = result.data;
+          } catch (err: any) {
+            preFindings.push({
+              level: 'error',
+              code: 'invalid-ir',
+              flowId: stem,
+              message: `${fileName} 读不出合法 JSON：${err?.message ?? err}。已跳过这条用例。`,
+            });
+            continue;
+          }
+          const specPath = path.join(generatedDir, `${stem}.spec.ts`);
+          cases.push({
+            flowId: parsed.flowId,
+            ir: parsed,
+            specContent: fs.existsSync(specPath)
+              ? fs.readFileSync(specPath, 'utf8')
+              : null,
+          });
+        }
+        caseCount += cases.length;
+
+        const findings: VerifyFinding[] = [
+          ...preFindings,
+          ...verifyCases(topology, cases, {
+            emit: (ir) => emitSpec(ir, readRouterOptions(project.root)),
+          }),
+        ];
+        for (const specFile of specFiles) {
+          const stem = specFile.slice(0, -'.spec.ts'.length);
+          if (irNames.has(`${stem}.ir.json`)) continue;
+          findings.push({
+            level: 'error',
+            code: 'orphan-spec',
+            flowId: stem,
+            message: `孤立的生成物 ${specFile} 没有同名 .ir.json；IR 可能已被删除，请恢复 IR 或移除该 spec。`,
+          });
+        }
+
+        const errors = findings.filter((item) => item.level === 'error');
+        const warnings = findings.filter((item) => item.level === 'warning');
+        errorCount += errors.length;
+        warningCount += warnings.length;
+
+        console.log(`项目 ${project.name}`);
+        console.log('错误：');
+        if (errors.length === 0) console.log('  无');
+        for (const item of errors) console.log(`  [${item.flowId}] ${item.message}`);
+        console.log('警告：');
+        if (warnings.length === 0) console.log('  无');
+        for (const item of warnings) console.log(`  [${item.flowId}] ${item.message}`);
+        console.log();
+      }
+
+      console.log(`${errorCount} 个错误，${warningCount} 个警告，共 ${caseCount} 条用例`);
+      process.exit(errorCount > 0 || (options.strict && warningCount > 0) ? 1 : 0);
     } catch (err: any) {
       fail(err);
     }

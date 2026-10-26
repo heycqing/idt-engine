@@ -43,6 +43,10 @@ export interface IdtProject {
   port: number;
   /** 每次导航都带上的查询串，比如宿主的免登录渠道旁路。 */
   urlQuery?: Record<string, string>;
+  /** 覆盖静态检测出的路由模式。静态解析盖不到的写法走这里。 */
+  routerMode?: 'hash' | 'history';
+  /** 覆盖静态检测出的 base。运行期才有值的写法（window.xxx）只能写死在这。 */
+  routerBase?: string;
 }
 
 export const DEFAULT_PROJECT_PORT = 3000;
@@ -74,6 +78,11 @@ function readMarker(pkgPath: string): MarkedPackage | null {
       typeof scripts === 'object' &&
       typeof (scripts as Record<string, unknown>).dev === 'string',
   };
+}
+
+/** 只认两个合法值，写错了当没写——宁可回落到静态检测，也不要带着坏值往下跑。 */
+function routerModeOf(value: unknown): 'hash' | 'history' | undefined {
+  return value === 'hash' || value === 'history' ? value : undefined;
 }
 
 function devCommandOf(found: MarkedPackage): string | undefined {
@@ -152,6 +161,11 @@ export function resolveProjects(idtRoot: string, config: IdtConfig): IdtProject[
           LOCALE_CANDIDATES.filter((rel) => fs.existsSync(path.join(dir, ...rel.split('/')))),
         devCommand: devCommandOf(found),
         urlQuery: stringMap(marker.urlQuery),
+        routerMode: routerModeOf(marker.routerMode),
+        routerBase:
+          typeof marker.routerBase === 'string' && marker.routerBase.length > 0
+            ? marker.routerBase
+            : undefined,
         port:
           typeof declaredPort === 'number' && Number.isInteger(declaredPort)
             ? declaredPort

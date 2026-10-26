@@ -9,7 +9,11 @@
     "idt:sync": "tsx scripts/idt/cli.ts sync",
     "test:idt": "tsx scripts/idt/run-unit-tests.ts",
     "idt:link": "node scripts/idt/link-host.mjs",
-    "test:e2e": "playwright test --config=playwright.idt.config.ts"
+    "test:e2e": "playwright test --config=playwright.idt.config.ts",
+    "idt:verify": "tsx scripts/idt/cli.ts verify",
+    "idt:batch": "tsx scripts/idt/cli.ts batch",
+    "idt:test": "tsx scripts/idt/cli.ts test",
+    "idt:projects": "tsx scripts/idt/cli.ts projects"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",

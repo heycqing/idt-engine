@@ -89,10 +89,14 @@ apps/yuekai/.idt/...
 
 命令按这个顺序确定作用于哪个项目：显式 `--project <name>` → 当前工作目录所在的项目 → 只有一个项目时取它 → 否则报错并列出可选项。`pnpm idt:sync` 不带选择器时同步全部项目。
 
-`pnpm idt projects` 列出发现到的项目和它们的 globs。
+`pnpm idt:projects` 列出发现到的项目和它们的 globs。
 
-`idt batch` 按路由遍历生成，跳过意图匹配，只挑至少有一个确定名字元素的路由。
+`idt:batch` 按路由遍历生成，跳过意图匹配，只挑至少有一个确定名字元素的路由。
 宿主对某类路由有准入限制时用 `--exclude` 排掉，省下无谓的模型调用。
+
+`idt:verify` 离线核对已经生成的 IR/spec 与当前拓扑和装配源码：检查配对文件、
+spec 漂移、未解决项、失效路由、缺失元素和只有 URL 断言的弱用例。它不调用模型、
+不启动浏览器，也不访问网络；`--strict` 会把警告也视为失败。
 
 **Git Bash 用户注意**：MSYS 会把以 `/` 开头的参数当成路径改写，
 `--exclude '/credit'` 到手会变成 `C:/Program Files/Git/credit`。写成
@@ -114,12 +118,17 @@ IR 本身只存应用路由，不带 `#`。同一条 IR 在宿主从 hash 换成
 
 ## 可用命令
 
+`pnpm idt` 这个脚本固定映射到 `gen`，后面跟的是意图字符串而不是子命令。其余子命令
+各有自己的脚本名（`idt:batch`、`idt:verify`、`idt:test`、`idt:projects`），不要写成
+`pnpm idt verify`——那会被当成一句叫「verify」的意图去调模型。
+
 - 把引擎接到宿主：`pnpm idt:link -- --host <宿主根目录>`
 - 生成状态转移 IR 与 spec：`pnpm idt "<intent>"`（需要项目根目录的 `.env.idt.local` 填好 `OPENAI_API_KEY`；`gen` 会同时写出 IR 与 spec，带 `--yes` 才会执行这条 spec）
 - 从 IR 写出 spec：`pnpm idt:emit <ir路径>`（不需要安装 Playwright）
 - 自愈失败 spec：`pnpm idt:heal <spec路径>`
 - 同步拓扑与语义索引：`pnpm idt:sync`（多项目宿主默认同步全部，`--project <name>` 只同步一个）
-- 按路由批量生成：`pnpm idt batch [--project <name>] [--limit <n>] [--filter <子串>] [--exclude <子串,子串>]`
-- 运行某个项目的端到端测试：`pnpm idt test [spec...] [--project <name>] [playwright 参数]`
-- 列出发现到的 IDT 项目：`pnpm idt projects`
+- 按路由批量生成：`pnpm idt:batch [--project <name>] [--limit <n>] [--filter <子串>] [--exclude <子串,子串>]`
+- 离线校验生成用例：`pnpm idt:verify [--project <name>] [--strict]`（不指定项目时校验全部项目）
+- 运行某个项目的端到端测试：`pnpm idt:test [spec...] [--project <name>] [playwright 参数]`
+- 列出发现到的 IDT 项目：`pnpm idt:projects`
 - 运行单元测试套件：`pnpm test:idt`（单测在 `tests/unit/`，不访问网络，也不启动浏览器）

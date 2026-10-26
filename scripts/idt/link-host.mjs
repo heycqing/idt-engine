@@ -149,6 +149,10 @@ export function desiredScripts(enginePosix, tsxRuntimePosix = '') {
     'idt:sync': `${command} sync`,
     'idt:emit': `${command} emit`,
     'idt:heal': `${command} heal`,
+    'idt:batch': `${command} batch`,
+    'idt:verify': `${command} verify`,
+    'idt:test': `${command} test`,
+    'idt:projects': `${command} projects`,
   };
 }
 

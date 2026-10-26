@@ -114,6 +114,36 @@ describe('idt projects', () => {
     }
   });
 
+  // 静态检测盖不到的写法要能靠标志纠正——README 承诺了这个出口，
+  // 之前 IdtProject 根本没有这两个字段，承诺是空头的。
+  it('reads routerMode and routerBase from the marker', () => {
+    const root = tempRoot();
+    try {
+      mark(root, 'apps/caida', {
+        project: 'caida',
+        routerMode: 'hash',
+        routerBase: '/trade/',
+      });
+      const [project] = resolveProjects(root, { pageGlobs: [], routerGlobs: [], localeFiles: [] });
+      assert.equal(project.routerMode, 'hash');
+      assert.equal(project.routerBase, '/trade/');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores a routerMode that is not hash or history', () => {
+    const root = tempRoot();
+    try {
+      mark(root, 'apps/caida', { project: 'caida', routerMode: 'memory', routerBase: 7 });
+      const [project] = resolveProjects(root, { pageGlobs: [], routerGlobs: [], localeFiles: [] });
+      assert.equal(project.routerMode, undefined);
+      assert.equal(project.routerBase, undefined);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('honours projectGlobs from the config', () => {
     const root = tempRoot();
     try {

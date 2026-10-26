@@ -261,6 +261,55 @@ describe('vue router extraction', () => {
     }
   });
 
+  // Vue Router 3 不写 mode 时默认是 hash，不是 history。把"没写"当成"测不出"
+  // 会让这类宿主拿到不带 # 的地址，每条用例第一跳就落空。
+  it('treats a VueRouter without a mode key as hash', () => {
+    const root = createTempDir();
+    try {
+      writeFile(
+        root,
+        'src/router/index.js',
+        'const router = new VueRouter({ routes: [] })\nexport default router\n',
+      );
+      const result = extractVueRouterMappings(root, ['src/router/**/*.js']);
+      assert.equal(result.routerMode, 'hash');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // mode 写成变量/三元仍然不猜——那是"看不懂"，跟"没写"是两回事。
+  it('still refuses to guess when mode is an expression', () => {
+    const root = createTempDir();
+    try {
+      writeFile(
+        root,
+        'src/router/index.js',
+        'const router = new VueRouter({ mode: routerMode, routes: [] })\nexport default router\n',
+      );
+      const result = extractVueRouterMappings(root, ['src/router/**/*.js']);
+      assert.equal(result.routerMode, undefined);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // 默认值只属于 VueRouter 的构造参数，别的对象字面量没有这个默认值。
+  it('does not treat an unrelated object literal as a hash router', () => {
+    const root = createTempDir();
+    try {
+      writeFile(
+        root,
+        'src/router/index.js',
+        'const options = { routes: [] }\nexport default options\n',
+      );
+      const result = extractVueRouterMappings(root, ['src/router/**/*.js']);
+      assert.equal(result.routerMode, undefined);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('reads a literal base and refuses to guess an expression', () => {
     const root = createTempDir();
     try {
