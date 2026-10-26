@@ -212,6 +212,106 @@ describe('verify generated cases', () => {
     assert.match(findings[0].message, /IR 无法重新装配/);
   });
 
+  // 需求文档原则 3：点击/勾选/选择必须绑到网络契约或路由守卫。但一条
+  // targetUrlPattern 指向自己所在页的守卫，对「本来就不跳页」的点击恒为真，
+  // 等于什么都没证明——实测产出过这种 spec，把接口 abort 掉它照样全绿。
+  const clickIr = (over: Partial<StateTransitionIR['stages'][0]> = {}) =>
+    makeIr({
+      stages: [
+        {
+          stageIndex: 0,
+          stageName: '提交',
+          routePattern: '/home',
+          actions: [
+            {
+              actionType: 'CLICK',
+              targetRole: 'button',
+              targetName: '提交',
+              timeoutMs: 5000,
+              triggersRequest: true,
+            } as any,
+          ],
+          invariants: {
+            network: [],
+            routeGuard: { targetUrlPattern: '/home', readyRole: 'button', readyName: '提交' },
+          },
+          ...over,
+        } as any,
+      ],
+    });
+
+  it('rejects a route guard that merely asserts the page the action started on', () => {
+    const findings = verify(clickIr());
+    const tautological = findings.filter((f) => f.code === 'tautological-guard');
+    assert.equal(tautological.length, 1);
+    assert.equal(tautological[0].level, 'error');
+  });
+
+  it('accepts the guard when a network contract carries the evidence', () => {
+    const ir = clickIr({
+      invariants: {
+        network: [
+          { method: 'GET', urlPattern: '/api/submit', expectedStatus: 200, responseType: 'json' },
+        ],
+        routeGuard: { targetUrlPattern: '/home' },
+      },
+    } as any);
+    assert.deepEqual(verify(ir).filter((f) => f.code === 'tautological-guard'), []);
+  });
+
+  it('accepts the guard when the action actually navigates elsewhere', () => {
+    const ir = clickIr({
+      invariants: { network: [], routeGuard: { targetUrlPattern: '/done$' } },
+    } as any);
+    assert.deepEqual(verify(ir).filter((f) => f.code === 'tautological-guard'), []);
+  });
+
+  it('leaves pure navigation cases alone — there the same-page guard is the point', () => {
+    const ir = makeIr({
+      stages: [
+        {
+          stageIndex: 0,
+          stageName: '首页',
+          routePattern: '/home',
+          actions: [],
+          invariants: {
+            network: [],
+            routeGuard: { targetUrlPattern: '/home', readyRole: 'button', readyName: '提交' },
+          },
+        } as any,
+      ],
+    });
+    assert.deepEqual(verify(ir).filter((f) => f.code === 'tautological-guard'), []);
+  });
+
+  it('does not fire for FILL alone, which needs no hard evidence', () => {
+    const ir = clickIr({
+      actions: [
+        {
+          actionType: 'FILL',
+          targetRole: 'textbox',
+          targetName: '客户号',
+          inputValue: '1',
+          timeoutMs: 5000,
+          triggersRequest: false,
+        } as any,
+      ],
+    } as any);
+    assert.deepEqual(verify(ir).filter((f) => f.code === 'tautological-guard'), []);
+  });
+
+  it('compares the two patterns with anchors stripped from both sides', () => {
+    const ir = clickIr({
+      routePattern: '^/home',
+      invariants: { network: [], routeGuard: { targetUrlPattern: '/home$' } },
+    } as any);
+    assert.equal(
+      verify(ir).filter((f) => f.code === 'tautological-guard').length,
+      1,
+      '^/home 和 /home$ 指的是同一条路由',
+    );
+  });
+
   it('returns all findings for a case and sorts cases by flowId', () => {
     const broken = makeIr({
       initialRoute: '/removed',

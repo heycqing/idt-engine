@@ -12,7 +12,11 @@ export type FindingCode =
   | 'orphan-route'
   | 'unmatched-route-pattern'
   | 'missing-element'
+  | 'tautological-guard'
   | 'weak-assertion';
+
+/** 需要硬证据的动作。FILL 没有副作用，不在此列。 */
+const ACTIONS_NEEDING_EVIDENCE = new Set(['CLICK', 'CHECK', 'SELECT']);
 
 export interface VerifyFinding {
   level: FindingLevel;
@@ -172,6 +176,31 @@ export function verifyCases(
           action.targetName,
         );
         if (result) findings.push(result);
+      }
+
+      // 守卫指向自己所在的那一页时，它对「不跳页的点击」恒为真，证明不了
+      // 动作发生过。实测产出过这种 spec：把接口 abort 掉，三条断言照样全过。
+      const needsEvidence = stage.actions.some((action) =>
+        ACTIONS_NEEDING_EVIDENCE.has(action.actionType),
+      );
+      const guardPattern = stage.invariants.routeGuard?.targetUrlPattern;
+      if (
+        needsEvidence &&
+        stage.invariants.network.length === 0 &&
+        guardPattern !== undefined &&
+        exactRoute(guardPattern) === route
+      ) {
+        findings.push(
+          finding(
+            flowId,
+            'error',
+            'tautological-guard',
+            `用例 ${flowId} 的 stageIndex ${stage.stageIndex} 有需要硬证据的动作，`
+              + `但唯一的证据是一条指向本页 ${route} 的路由守卫——动作本来就不跳页，`
+              + `这条断言恒为真，证明不了动作生效。请补一条网络契约，`
+              + `或把 readyRole/readyName 换成只在动作之后才出现的元素。`,
+          ),
+        );
       }
 
       const guard = stage.invariants.routeGuard;
