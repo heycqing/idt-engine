@@ -1,6 +1,6 @@
 # IDT Engine 阶段 5
 
-本项目为 IDT 引擎的阶段 5 实现，将 `gen` 装配到 spec 生成，并补齐了 Playwright 配置。GitHub Actions 工作流写在本地 `.github/workflows/idt-e2e.yml`，这次不推送。单测不访问网络，也不启动浏览器。
+本项目为 IDT 引擎的阶段 5 实现，将 `gen` 装配到 spec 生成，并补齐了 Playwright 配置。单测不访问网络，也不启动浏览器，CI（`.github/workflows/ci.yml`）只跑类型检查和单测，不装浏览器、不调模型。
 
 系统规范与设计文档请参考：`D:\mine-prop\过去的知识图谱\AI与智能体工程\IDT引擎`。
 
