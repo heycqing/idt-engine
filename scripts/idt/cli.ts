@@ -431,7 +431,14 @@ program
         pick: options.pick,
       });
 
-      if (result.written && result.delta) {
+      if (result.written && result.evidence === 'route' && result.route) {
+        console.log(
+          `已写入 routeGuard.targetUrlPattern：${result.route.targetUrlPattern}`,
+        );
+        if (result.route.discardedReady) {
+          console.log('已丢弃原有 routeGuard.readyRole / readyName（目标页已变化）');
+        }
+      } else if (result.written && result.evidence === 'dom' && result.delta) {
         console.log(
           `已写入 domDelta：(${result.delta.appearedRole}, ${result.delta.appearedName})`,
         );

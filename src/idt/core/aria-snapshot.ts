@@ -14,7 +14,15 @@ export function parseAriaSnapshot(snapshot: string): AriaElement[] {
     const role = match[1];
     const afterRoleIndex = (match.index ?? 0) + match[0].length;
     const quoteStart = line.indexOf('"', afterRoleIndex);
-    if (quoteStart === -1) continue;
+    if (quoteStart === -1) {
+      const remainder = line.slice(afterRoleIndex);
+      if (role === 'text' && remainder.startsWith(':')) {
+        results.push({ role, name: remainder.slice(1).trim() });
+      } else if (remainder.trim() === '') {
+        results.push({ role, name: '' });
+      }
+      continue;
+    }
 
     let name = '';
     let i = quoteStart + 1;

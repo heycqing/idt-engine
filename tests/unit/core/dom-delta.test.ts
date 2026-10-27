@@ -1,6 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { diffAriaSnapshots } from '../../../src/idt/core/dom-delta.js';
+import {
+  diffAriaSnapshots,
+  isUsableTextName,
+} from '../../../src/idt/core/dom-delta.js';
 
 describe('diffAriaSnapshots', () => {
   it('returns role and name pairs that appear only after the action', () => {
@@ -57,5 +60,48 @@ describe('diffAriaSnapshots', () => {
         { role: 'heading', name: '第二' },
       ],
     );
+  });
+
+  it('keeps a short text node as a candidate', () => {
+    assert.deepEqual(diffAriaSnapshots('', '- text: 确认'), [
+      { role: 'text', name: '确认' },
+    ]);
+  });
+
+  it('filters a page-sized text node longer than 24 characters', () => {
+    assert.deepEqual(
+      diffAriaSnapshots('', '- text: 智能网格一键生成最优网格一键跟投自动下单查看详情以及更多说明'),
+      [],
+    );
+  });
+
+  it('filters a text node containing three whitespace-separated segments', () => {
+    assert.deepEqual(diffAriaSnapshots('', '- text: 全部 范围 0.00~0.00'), []);
+  });
+
+  it('does not filter an equally long quoted accessible name for another role', () => {
+    const name = '请输入第一创业证券客户号并继续完成后续身份验证步骤';
+    assert.ok(name.length > 24);
+    assert.deepEqual(diffAriaSnapshots('', `- textbox "${name}"`), [
+      { role: 'textbox', name },
+    ]);
+  });
+});
+
+describe('isUsableTextName', () => {
+  it('accepts 24 characters and rejects 25 characters', () => {
+    assert.equal(isUsableTextName('一'.repeat(24)), true);
+    assert.equal(isUsableTextName('一'.repeat(25)), false);
+  });
+
+  it('accepts two whitespace-separated segments and rejects three', () => {
+    assert.equal(isUsableTextName('第一段 第二段'), true);
+    assert.equal(isUsableTextName('第一段 第二段 第三段'), false);
+  });
+
+  it('keeps representative short locator names', () => {
+    for (const name of ['确认', '我知道了', '查看详情', '请输入第一创业证券客户号']) {
+      assert.equal(isUsableTextName(name), true, name);
+    }
   });
 });

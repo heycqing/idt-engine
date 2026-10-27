@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_ROUTER_URL_OPTIONS,
+  fromBrowserUrl,
   routerUrlOptions,
   toBrowserUrl,
   toGuardPattern,
@@ -117,5 +118,44 @@ describe('route url', () => {
     );
     // 没有查询串时保持原样
     assert.equal(toGuardPattern('/checkout$', { mode: 'hash' }), '#/checkout$');
+  });
+
+  it('restores an application route from a hash browser URL', () => {
+    assert.equal(
+      fromBrowserUrl('http://127.0.0.1:8080/#/iframePage', hash),
+      '/iframePage',
+    );
+  });
+
+  it('removes the base and query from a hash browser URL', () => {
+    assert.equal(
+      fromBrowserUrl('http://host/trade/#/a/b?x=1', {
+        mode: 'hash',
+        base: '/trade/',
+      }),
+      '/a/b',
+    );
+  });
+
+  it('removes the base from a history browser URL', () => {
+    assert.equal(
+      fromBrowserUrl('http://host/trade/a/b?x=1', {
+        mode: 'history',
+        base: '/trade/',
+      }),
+      '/a/b',
+    );
+  });
+
+  it('returns an empty string for invalid URLs or mismatched bases', () => {
+    assert.equal(fromBrowserUrl('not a browser URL', history), '');
+    assert.equal(
+      fromBrowserUrl('http://host/other/a', { mode: 'history', base: '/trade/' }),
+      '',
+    );
+    assert.equal(
+      fromBrowserUrl('http://host/other/#/a', { mode: 'hash', base: '/trade/' }),
+      '',
+    );
   });
 });

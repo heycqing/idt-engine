@@ -14,7 +14,7 @@ import {
   replayUntil,
   type ReplayPage,
 } from './replay.js';
-import { readRouterOptions } from './route-url.js';
+import { fromBrowserUrl, readRouterOptions } from './route-url.js';
 
 export interface ProbeTarget {
   stageIndex: number;
@@ -29,12 +29,19 @@ export interface ProbeOptions {
   replay?: (
     ir: StateTransitionIR,
     target: ProbeTarget,
-  ) => Promise<{ before: string; after: string }>;
+  ) => Promise<{
+    before: string;
+    after: string;
+    beforeUrl: string;
+    afterUrl: string;
+  }>;
 }
 
 export interface ProbeResult {
   exitCode: number;
   written?: boolean;
+  evidence?: 'route' | 'dom';
+  route?: { targetUrlPattern: string; discardedReady: boolean };
   delta?: { appearedRole: string; appearedName: string };
   candidates?: DomDeltaCandidate[];
   reason?: string;
@@ -110,27 +117,70 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
   }
   // timeoutMs 在 ActionSchema 上带 .default(5000)，解析之后一定有值。
   const waitMs = ir.stages[target.stageIndex].actions[target.actionIndex].timeoutMs;
+  const router = readRouterOptions(options.projectRoot);
 
   const replayImpl = options.replay ?? (async (currentIr, currentTarget) =>
     launchChromiumReplay(
       options.projectRoot,
       currentIr.setup.storageStatePath,
       async (page) => {
-        const router = readRouterOptions(options.projectRoot);
         const before = await replayUntil(currentIr, currentTarget, page, router);
+        const beforeUrl = page.url();
         const action = currentIr.stages[currentTarget.stageIndex].actions[currentTarget.actionIndex];
         await executeAction(page, action);
         await new Promise((resolve) => setTimeout(resolve, waitMs));
-        return { before, after: await page.ariaSnapshot() };
+        const after = await page.ariaSnapshot();
+        return { before, after, beforeUrl, afterUrl: page.url() };
       },
       options.baseUrl,
     ));
 
-  let snapshots: { before: string; after: string };
+  let snapshots: {
+    before: string;
+    after: string;
+    beforeUrl: string;
+    afterUrl: string;
+  };
   try {
     snapshots = await replayImpl(ir, target);
   } catch (error) {
     return { exitCode: 2, reason: `重放取 aria 快照失败：${error instanceof Error ? error.message : error}` };
+  }
+
+  const beforeRoute = fromBrowserUrl(snapshots.beforeUrl, router);
+  const afterRoute = fromBrowserUrl(snapshots.afterUrl, router);
+  if (afterRoute && afterRoute !== beforeRoute) {
+    if (options.pick !== undefined) {
+      return {
+        exitCode: 2,
+        reason: 'URL 已变化，--pick 只适用于 DOM 增量候选，不能用于路由证据',
+      };
+    }
+
+    const updatedIr = structuredClone(ir);
+    const invariants = updatedIr.stages[target.stageIndex].invariants;
+    const discardedReady = Boolean(
+      invariants.routeGuard?.readyRole || invariants.routeGuard?.readyName,
+    );
+    invariants.routeGuard = { targetUrlPattern: afterRoute };
+
+    let specContent: string;
+    try {
+      specContent = emitSpec(updatedIr, router);
+    } catch (error) {
+      return { exitCode: 2, reason: `重新生成 spec 失败：${error instanceof Error ? error.message : error}` };
+    }
+
+    const stem = path.basename(irPath).replace(/\.ir\.json$/, '');
+    const specPath = path.join(path.dirname(irPath), `${stem}.spec.ts`);
+    atomicWrite(irPath, JSON.stringify(updatedIr, null, 2) + '\n');
+    atomicWrite(specPath, specContent);
+    return {
+      exitCode: 0,
+      written: true,
+      evidence: 'route',
+      route: { targetUrlPattern: afterRoute, discardedReady },
+    };
   }
 
   const candidates = diffAriaSnapshots(snapshots.before, snapshots.after);
@@ -164,7 +214,7 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
 
   let specContent: string;
   try {
-    specContent = emitSpec(updatedIr, readRouterOptions(options.projectRoot));
+    specContent = emitSpec(updatedIr, router);
   } catch (error) {
     return { exitCode: 2, reason: `重新生成 spec 失败：${error instanceof Error ? error.message : error}` };
   }
@@ -173,5 +223,5 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
   const specPath = path.join(path.dirname(irPath), `${stem}.spec.ts`);
   atomicWrite(irPath, JSON.stringify(updatedIr, null, 2) + '\n');
   atomicWrite(specPath, specContent);
-  return { exitCode: 0, written: true, delta };
+  return { exitCode: 0, written: true, evidence: 'dom', delta };
 }

@@ -6,6 +6,10 @@ import { replayUntil, type ReplayPage } from '../../../src/idt/core/replay.js';
 class MockReplayPage implements ReplayPage {
   calls: string[] = [];
 
+  url(): string {
+    return 'http://host/current';
+  }
+
   async goto(url: string): Promise<void> {
     this.calls.push(`goto:${url}`);
   }

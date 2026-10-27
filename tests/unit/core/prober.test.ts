@@ -57,6 +57,15 @@ function fixture(ir: unknown = makeIr()) {
   };
 }
 
+function replayResult(
+  before: string,
+  after: string,
+  beforeUrl = 'http://host/form',
+  afterUrl = beforeUrl,
+) {
+  return { before, after, beforeUrl, afterUrl };
+}
+
 describe('probe', () => {
   it('writes the unique appeared element to the IR and re-emits the spec', async () => {
     const item = fixture();
@@ -64,14 +73,15 @@ describe('probe', () => {
       const result = await probe({
         projectRoot: item.root,
         irPath: item.irPath,
-        replay: async () => ({
-          before: '- button "提交"',
-          after: '- button "提交"\n- dialog "提交成功"',
-        }),
+        replay: async () => replayResult(
+          '- button "提交"',
+          '- button "提交"\n- dialog "提交成功"',
+        ),
       });
 
       assert.equal(result.exitCode, 0);
       assert.equal(result.written, true);
+      assert.equal(result.evidence, 'dom');
       assert.deepEqual(result.delta, {
         appearedRole: 'dialog',
         appearedName: '提交成功',
@@ -92,7 +102,7 @@ describe('probe', () => {
       const result = await probe({
         projectRoot: item.root,
         irPath: item.irPath,
-        replay: async () => ({ before: '', after: '- banner "顶部"' }),
+        replay: async () => replayResult('', '- banner "顶部"'),
       });
 
       assert.equal(result.exitCode, 2);
@@ -113,10 +123,7 @@ describe('probe', () => {
       const result = await probe({
         projectRoot: item.root,
         irPath: item.irPath,
-        replay: async () => ({
-          before: '',
-          after: '- dialog "确认"\n- button "关闭"',
-        }),
+        replay: async () => replayResult('', '- dialog "确认"\n- button "关闭"'),
       });
 
       assert.equal(result.exitCode, 2);
@@ -138,10 +145,7 @@ describe('probe', () => {
         projectRoot: item.root,
         irPath: item.irPath,
         pick: 2,
-        replay: async () => ({
-          before: '',
-          after: '- text "动态结果"\n- button "确认"',
-        }),
+        replay: async () => replayResult('', '- text "动态结果"\n- button "确认"'),
       });
 
       assert.equal(result.exitCode, 0);
@@ -163,10 +167,7 @@ describe('probe', () => {
         projectRoot: item.root,
         irPath: item.irPath,
         pick: 1,
-        replay: async () => ({
-          before: '',
-          after: '- dialog "先出现"\n- button "后出现"',
-        }),
+        replay: async () => replayResult('', '- dialog "先出现"\n- button "后出现"'),
       });
 
       assert.equal(result.exitCode, 0);
@@ -182,7 +183,7 @@ describe('probe', () => {
   it('pick 1 with one candidate matches the result without pick', async () => {
     const pickedItem = fixture();
     const defaultItem = fixture();
-    const replay = async () => ({ before: '', after: '- dialog "完成"' });
+    const replay = async () => replayResult('', '- dialog "完成"');
     try {
       const picked = await probe({
         projectRoot: pickedItem.root,
@@ -219,10 +220,7 @@ describe('probe', () => {
         projectRoot: item.root,
         irPath: item.irPath,
         pick: 3,
-        replay: async () => ({
-          before: '',
-          after: '- dialog "确认"\n- button "关闭"',
-        }),
+        replay: async () => replayResult('', '- dialog "确认"\n- button "关闭"'),
       });
 
       assert.equal(result.exitCode, 2);
@@ -268,7 +266,7 @@ describe('probe', () => {
         projectRoot: item.root,
         irPath: item.irPath,
         pick: 1,
-        replay: async () => ({ before: '- button "提交"', after: '- button "提交"' }),
+        replay: async () => replayResult('- button "提交"', '- button "提交"'),
       });
 
       assert.equal(result.exitCode, 2);
@@ -287,10 +285,7 @@ describe('probe', () => {
         projectRoot: item.root,
         irPath: item.irPath,
         pick: 2,
-        replay: async () => ({
-          before: '',
-          after: '- button "确认"\n- banner "顶部"',
-        }),
+        replay: async () => replayResult('', '- button "确认"\n- banner "顶部"'),
       });
 
       assert.equal(result.exitCode, 2);
@@ -309,7 +304,7 @@ describe('probe', () => {
       const result = await probe({
         projectRoot: item.root,
         irPath: item.irPath,
-        replay: async () => ({ before: '- button "提交"', after: '- button "提交"' }),
+        replay: async () => replayResult('- button "提交"', '- button "提交"'),
       });
 
       assert.equal(result.exitCode, 2);
@@ -361,7 +356,7 @@ describe('probe', () => {
         irPath: item.irPath,
         replay: async (_ir, currentTarget) => {
           target = currentTarget;
-          return { before: '', after: '- heading "第二步完成"' };
+          return replayResult('', '- heading "第二步完成"');
         },
       });
 
@@ -421,11 +416,109 @@ describe('probe', () => {
         irPath: item.irPath,
         replay: async (_ir, currentTarget) => {
           target = currentTarget;
-          return { before: '', after: '- dialog "完成"' };
+          return replayResult('', '- dialog "完成"');
         },
       });
 
       assert.deepEqual(target, { stageIndex: 0, actionIndex: 1 });
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
+  it('writes a changed route as the preferred evidence', async () => {
+    const item = fixture();
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        replay: async () => replayResult(
+          '- button "提交"',
+          '- heading "完成"',
+          'http://host/form',
+          'http://host/iframePage',
+        ),
+      });
+
+      assert.equal(result.exitCode, 0);
+      assert.equal(result.evidence, 'route');
+      assert.deepEqual(result.route, {
+        targetUrlPattern: '/iframePage',
+        discardedReady: false,
+      });
+      const written = JSON.parse(fs.readFileSync(item.irPath, 'utf8'));
+      assert.deepEqual(written.stages[0].invariants.routeGuard, {
+        targetUrlPattern: '/iframePage',
+      });
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
+  it('discards stale route ready assertions after navigation', async () => {
+    const ir = makeIr();
+    ir.stages[0].invariants.routeGuard = {
+      targetUrlPattern: '/form',
+      readyRole: 'heading',
+      readyName: '旧页面标题',
+    };
+    const item = fixture(ir);
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        replay: async () => replayResult('', '', 'http://host/form', 'http://host/done'),
+      });
+
+      assert.deepEqual(result.route, {
+        targetUrlPattern: '/done',
+        discardedReady: true,
+      });
+      const written = JSON.parse(fs.readFileSync(item.irPath, 'utf8'));
+      assert.deepEqual(written.stages[0].invariants.routeGuard, {
+        targetUrlPattern: '/done',
+      });
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not write domDelta when the URL changed even if the DOM changed', async () => {
+    const item = fixture();
+    try {
+      await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        replay: async () => replayResult(
+          '',
+          '- dialog "DOM 也变了"',
+          'http://host/form',
+          'http://host/done',
+        ),
+      });
+
+      const written = JSON.parse(fs.readFileSync(item.irPath, 'utf8'));
+      assert.equal(written.stages[0].invariants.domDelta, undefined);
+      assert.equal(written.stages[0].invariants.routeGuard.targetUrlPattern, '/done');
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects --pick for route evidence without changing files', async () => {
+    const item = fixture();
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        pick: 1,
+        replay: async () => replayResult('', '', 'http://host/form', 'http://host/done'),
+      });
+
+      assert.equal(result.exitCode, 2);
+      assert.match(result.reason ?? '', /--pick.*URL|URL.*--pick/);
+      assert.equal(fs.readFileSync(item.irPath, 'utf8'), item.content);
+      assert.equal(fs.existsSync(item.specPath), false);
     } finally {
       fs.rmSync(item.root, { recursive: true, force: true });
     }

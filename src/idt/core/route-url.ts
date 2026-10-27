@@ -52,6 +52,31 @@ export function toBrowserUrl(
   return base === '/' ? path : `${base}${path.slice(1)}`;
 }
 
+/** 把浏览器地址还原成应用路由。hash 模式取 # 之后、? 之前的部分。 */
+export function fromBrowserUrl(
+  url: string,
+  options: RouterUrlOptions = DEFAULT_ROUTER_URL_OPTIONS,
+): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return '';
+  }
+
+  const base = normalizeBase(options.base);
+  const expectedBasePath = base;
+  if (options.mode === 'hash') {
+    if (parsed.pathname !== expectedBasePath) return '';
+    const route = parsed.hash.slice(1).split('?', 1)[0];
+    return route.startsWith('/') ? route : '';
+  }
+
+  if (!parsed.pathname.startsWith(base)) return '';
+  const route = `/${parsed.pathname.slice(base.length)}`;
+  return route.startsWith('//') ? '' : route;
+}
+
 /**
  * IR 的 routeGuard.targetUrlPattern 按契约就是正则片段（fixture 里形如
  * "/checkout$"），不是路由，所以这里只在 hash 模式下把锚点前移到 #，

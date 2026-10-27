@@ -68,6 +68,9 @@ describe('heal route guard ready assertion', () => {
     const ir = guardIr();
     const calls: string[] = [];
     const page: ReplayPage = {
+      url() {
+        return 'http://host/current';
+      },
       async goto(url) {
         calls.push(`goto ${url}`);
       },

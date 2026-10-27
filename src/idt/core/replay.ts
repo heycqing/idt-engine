@@ -10,6 +10,7 @@ import type { StateTransitionIR } from './ir-schema.js';
 import { findTriggerActionIndex } from './action-order.js';
 
 export interface ReplayPage {
+  url(): string;
   goto(url: string): Promise<void>;
   click(role: string, name: string, timeoutMs: number): Promise<void>;
   fill(role: string, name: string, value: string, timeoutMs: number): Promise<void>;
@@ -128,6 +129,9 @@ export async function launchChromiumReplay<T>(
         : playwrightPage.getByRole(role as any, { name });
 
     const replayPage: ReplayPage = {
+      url() {
+        return playwrightPage.url();
+      },
       async goto(url: string) {
         await playwrightPage.goto(url);
       },
