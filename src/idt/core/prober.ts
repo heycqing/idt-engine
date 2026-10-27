@@ -38,6 +38,7 @@ export interface ProbeReplayResult {
   afterUrl: string;
   beforeObserved?: ObservedElement[];
   afterObserved?: ObservedElement[];
+  hit?: string | null;
 }
 
 export interface ProbeTarget {
@@ -54,6 +55,7 @@ export interface ProbeOptions {
     ir: StateTransitionIR,
     target: ProbeTarget,
   ) => Promise<ProbeReplayResult>;
+  launchReplay?: <T>(run: (page: ReplayPage) => Promise<T>) => Promise<T>;
 }
 
 export interface ProbeResult {
@@ -65,6 +67,19 @@ export interface ProbeResult {
   candidates?: ProbeCandidate[];
   observation?: 'dom' | 'aria';
   reason?: string;
+  hitMismatch?: { expected: string; actual: string };
+}
+
+/** 两条 CSS 路径是不是同一个元素，或互为祖先/后代。边界对齐到 ' > '。 */
+function isSelfOrLineage(a: string, b: string): boolean {
+  if (a === b) return true;
+  return a.startsWith(`${b} > `) || b.startsWith(`${a} > `);
+}
+
+export function formatHitMismatchWarning(
+  mismatch: NonNullable<ProbeResult['hitMismatch']>,
+): string {
+  return `警告：点击实际落在 ${mismatch.actual}，而 IR 指的是 ${mismatch.expected}`;
 }
 
 function atomicWrite(targetPath: string, content: string): void {
@@ -131,6 +146,38 @@ function observedCandidates(
   }));
 }
 
+function targetCss(
+  elements: ObservedElement[] | undefined,
+  action: Action,
+): string | null {
+  if (!elements) return null;
+  const target = elements.find((element) => {
+    const name = element.ownText || element.alt || '';
+    const role = element.role?.trim()
+      || TAG_ROLES[element.tag]
+      || (element.ownText ? 'text' : undefined);
+    return role === action.targetRole && name === action.targetName;
+  });
+  return target?.css ?? null;
+}
+
+function findHitMismatch(
+  ir: StateTransitionIR,
+  target: ProbeTarget,
+  replay: ProbeReplayResult,
+): ProbeResult['hitMismatch'] {
+  if (!replay.hit) return undefined;
+  const action = ir.stages[target.stageIndex].actions[target.actionIndex];
+  const expected = targetCss(replay.beforeObserved, action);
+  if (!expected) return undefined;
+  // 祖先/后代都算一致——点击冒泡到父容器是常见且正常的。
+  // 但比较必须对齐到 ' > ' 分隔符：裸 startsWith 会把
+  // 'div.foo > div.bar' 和 'div.foo > div.barbaz' 这种兄弟关系误判成祖先，
+  // 真实的 mismatch 就被静默吞掉了。
+  if (isSelfOrLineage(expected, replay.hit)) return undefined;
+  return { expected, actual: replay.hit };
+}
+
 export async function probe(options: ProbeOptions): Promise<ProbeResult> {
   if (options.pick !== undefined && (!Number.isInteger(options.pick) || options.pick < 1)) {
     return { exitCode: 2, reason: '--pick 序号必须是从 1 开始的整数' };
@@ -162,11 +209,8 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
   const waitMs = ir.stages[target.stageIndex].actions[target.actionIndex].timeoutMs;
   const router = readRouterOptions(options.projectRoot);
 
-  const replayImpl = options.replay ?? (async (currentIr, currentTarget) =>
-    launchChromiumReplay(
-      options.projectRoot,
-      currentIr.setup.storageStatePath,
-      async (page) => {
+  const replayImpl = options.replay ?? (async (currentIr, currentTarget) => {
+    const run = async (page: ReplayPage): Promise<ProbeReplayResult> => {
         const beforeFrame = await replayUntilCaptured(
           currentIr,
           currentTarget,
@@ -180,8 +224,19 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
         );
         const beforeUrl = page.url();
         const action = currentIr.stages[currentTarget.stageIndex].actions[currentTarget.actionIndex];
+        try {
+          await page.installHitProbe();
+        } catch {
+          // The hit probe is optional and must never block the replay.
+        }
         await executeAction(page, action);
         await new Promise((resolve) => setTimeout(resolve, waitMs));
+        let hit: string | null = null;
+        try {
+          hit = await page.readHit();
+        } catch {
+          // A failed read is equivalent to no captured click.
+        }
         const afterObserved = await page.observe();
         const needsAriaFallback = beforeFrame.observed.length === 0 || afterObserved.length === 0;
         const after = needsAriaFallback ? await page.ariaSnapshot() : '';
@@ -192,10 +247,17 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
           afterUrl: page.url(),
           beforeObserved: beforeFrame.observed,
           afterObserved,
+          hit,
         };
-      },
+      };
+    if (options.launchReplay) return await options.launchReplay(run);
+    return await launchChromiumReplay(
+      options.projectRoot,
+      currentIr.setup.storageStatePath,
+      run,
       options.baseUrl,
-    ));
+    );
+  });
 
   let snapshots: ProbeReplayResult;
   try {
@@ -204,6 +266,9 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
     return { exitCode: 2, reason: `重放取 aria 快照失败：${error instanceof Error ? error.message : error}` };
   }
 
+  const hitMismatch = findHitMismatch(ir, target, snapshots);
+  const hitResult = hitMismatch ? { hitMismatch } : {};
+
   const beforeRoute = fromBrowserUrl(snapshots.beforeUrl, router);
   const afterRoute = fromBrowserUrl(snapshots.afterUrl, router);
   if (afterRoute && afterRoute !== beforeRoute) {
@@ -211,6 +276,7 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
       return {
         exitCode: 2,
         reason: 'URL 已变化，--pick 只适用于 DOM 增量候选，不能用于路由证据',
+        ...hitResult,
       };
     }
 
@@ -225,7 +291,11 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
     try {
       specContent = emitSpec(updatedIr, router);
     } catch (error) {
-      return { exitCode: 2, reason: `重新生成 spec 失败：${error instanceof Error ? error.message : error}` };
+      return {
+        exitCode: 2,
+        reason: `重新生成 spec 失败：${error instanceof Error ? error.message : error}`,
+        ...hitResult,
+      };
     }
 
     const stem = path.basename(irPath).replace(/\.ir\.json$/, '');
@@ -237,6 +307,7 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
       written: true,
       evidence: 'route',
       route: { targetUrlPattern: afterRoute, discardedReady },
+      ...hitResult,
     };
   }
 
@@ -248,15 +319,16 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
     ? observedCandidates(snapshots.beforeObserved!, snapshots.afterObserved!)
     : diffAriaSnapshots(snapshots.before, snapshots.after);
   if (candidates.length === 0) {
-    return { exitCode: 2, observation, reason: '这个动作没有可观察的 DOM 效果' };
+    return { exitCode: 2, observation, reason: '这个动作没有可观察的 DOM 效果', ...hitResult };
   }
   if (options.pick === undefined && candidates.length > 1) {
-    return { exitCode: 2, candidates, observation };
+    return { exitCode: 2, candidates, observation, ...hitResult };
   }
   if (options.pick !== undefined && options.pick > candidates.length) {
     return {
       exitCode: 2,
       reason: `只探到 ${candidates.length} 个 DOM 增量候选，不能选择第 ${options.pick} 个`,
+      ...hitResult,
     };
   }
 
@@ -272,13 +344,13 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
     try {
       specContent = emitSpec(updatedIr, router);
     } catch (error) {
-      return { exitCode: 2, observation, reason: `重新生成 spec 失败：${error instanceof Error ? error.message : error}` };
+      return { exitCode: 2, observation, reason: `重新生成 spec 失败：${error instanceof Error ? error.message : error}`, ...hitResult };
     }
     const stem = path.basename(irPath).replace(/\.ir\.json$/, '');
     const specPath = path.join(path.dirname(irPath), `${stem}.spec.ts`);
     atomicWrite(irPath, JSON.stringify(updatedIr, null, 2) + '\n');
     atomicWrite(specPath, specContent);
-    return { exitCode: 0, written: true, evidence: 'dom', delta, observation };
+    return { exitCode: 0, written: true, evidence: 'dom', delta, observation, ...hitResult };
   }
   const role = AppearedRoleSchema.safeParse(candidate.role);
   if (!role.success) {
@@ -288,6 +360,7 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
         `探到的唯一增量是 (${candidate.role}, ${candidate.name})，`
         + `但 ${candidate.role} 不在 appearedRole 支持的取值里，断言写不出来。`
         + `确认它确实是该动作的证据的话，在 AppearedRoleSchema 里补上这个 role。`,
+      ...hitResult,
     };
   }
   const delta = { appearedRole: role.data, appearedName: candidate.name };
@@ -298,12 +371,12 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
   try {
     specContent = emitSpec(updatedIr, router);
   } catch (error) {
-    return { exitCode: 2, reason: `重新生成 spec 失败：${error instanceof Error ? error.message : error}` };
+    return { exitCode: 2, reason: `重新生成 spec 失败：${error instanceof Error ? error.message : error}`, ...hitResult };
   }
 
   const stem = path.basename(irPath).replace(/\.ir\.json$/, '');
   const specPath = path.join(path.dirname(irPath), `${stem}.spec.ts`);
   atomicWrite(irPath, JSON.stringify(updatedIr, null, 2) + '\n');
   atomicWrite(specPath, specContent);
-  return { exitCode: 0, written: true, evidence: 'dom', delta, observation };
+  return { exitCode: 0, written: true, evidence: 'dom', delta, observation, ...hitResult };
 }

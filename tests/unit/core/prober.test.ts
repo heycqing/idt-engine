@@ -3,9 +3,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { probe, type ProbeTarget } from '../../../src/idt/core/prober.js';
+import {
+  formatHitMismatchWarning,
+  probe,
+  type ProbeTarget,
+} from '../../../src/idt/core/prober.js';
 import type { StateTransitionIR } from '../../../src/idt/core/ir-schema.js';
 import type { ObservedElement } from '../../../src/idt/core/dom-observe.js';
+import type { ReplayPage } from '../../../src/idt/core/replay.js';
 
 function makeIr(): StateTransitionIR {
   return {
@@ -86,11 +91,168 @@ function domReplayResult(
   afterObserved: ObservedElement[],
   beforeUrl = 'http://host/form',
   afterUrl = beforeUrl,
+  hit: string | null = null,
 ) {
-  return { before: '', after: '', beforeUrl, afterUrl, beforeObserved, afterObserved };
+  return { before: '', after: '', beforeUrl, afterUrl, beforeObserved, afterObserved, hit };
+}
+
+function hitReplayResult(hit: string | null) {
+  const target = {
+    tag: 'button',
+    role: null,
+    ownText: '提交',
+    css: '#app > main > button.submit',
+  };
+  return domReplayResult(
+    observed([target]),
+    observed([
+      target,
+      { tag: 'div', role: 'dialog', ownText: '提交成功', css: '#success' },
+    ]),
+    'http://host/form',
+    'http://host/form',
+    hit,
+  );
 }
 
 describe('probe', () => {
+  it('formats a clear warning with the actual and IR target paths', () => {
+    const warning = formatHitMismatchWarning({
+      expected: '#app > main > button.submit',
+      actual: '#app > aside > button.other',
+    });
+
+    assert.match(warning, /点击实际落在/);
+    assert.match(warning, /#app > aside > button\.other/);
+    assert.match(warning, /IR 指的是/);
+    assert.match(warning, /#app > main > button\.submit/);
+  });
+
+  for (const [name, hit] of [
+    ['the target itself', '#app > main > button.submit'],
+    ['an ancestor of the target', '#app > main'],
+    ['a descendant of the target', '#app > main > button.submit > span'],
+  ] as const) {
+    it(`does not report a hit mismatch when the click lands on ${name}`, async () => {
+      const item = fixture();
+      try {
+        const result = await probe({
+          projectRoot: item.root,
+          irPath: item.irPath,
+          replay: async () => hitReplayResult(hit),
+        });
+
+        assert.equal(result.hitMismatch, undefined);
+      } finally {
+        fs.rmSync(item.root, { recursive: true, force: true });
+      }
+    });
+  }
+
+  // 祖先判定必须对齐到 ' > ' 分隔符。裸 startsWith 会把 button.submit 和
+  // button.submitAll 这种兄弟关系误判成祖先，真实的 mismatch 就被静默吞掉，
+  // 正好废掉这个功能存在的理由。
+  it('still reports a sibling whose selector shares a string prefix', async () => {
+    const item = fixture();
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        replay: async () => hitReplayResult('#app > main > button.sub'),
+      });
+
+      assert.deepEqual(result.hitMismatch, {
+        expected: '#app > main > button.submit',
+        actual: '#app > main > button.sub',
+      });
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
+  it('reports an unrelated hit without changing exit code or evidence writes', async () => {
+    const item = fixture();
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        replay: async () => hitReplayResult('#app > aside > button.other'),
+      });
+
+      assert.deepEqual(result.hitMismatch, {
+        expected: '#app > main > button.submit',
+        actual: '#app > aside > button.other',
+      });
+      assert.equal(result.exitCode, 0);
+      assert.equal(result.written, true);
+      assert.equal(fs.existsSync(item.specPath), true);
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores a missing recorded hit', async () => {
+    const item = fixture();
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        replay: async () => hitReplayResult(null),
+      });
+
+      assert.equal(result.hitMismatch, undefined);
+      assert.equal(result.exitCode, 0);
+      assert.equal(result.written, true);
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
+  it('continues probing when hit probe installation throws', async () => {
+    const item = fixture();
+    let observation = 0;
+    let clicked = false;
+    const target = observed([
+      { tag: 'button', ownText: '提交', css: '#app > button.submit' },
+    ])[0];
+    const page: ReplayPage = {
+      url: () => 'http://host/form',
+      async goto() {},
+      async click() { clicked = true; },
+      async fill() {},
+      async check() {},
+      async selectOption() {},
+      async waitForURL() {},
+      async waitForVisible() {},
+      async ariaSnapshot() { return ''; },
+      async observe() {
+        observation += 1;
+        return observation === 1
+          ? [target]
+          : [target, ...observed([
+            { tag: 'div', role: 'dialog', ownText: '提交成功', css: '#success' },
+          ])];
+      },
+      async installHitProbe() { throw new Error('blocked by CSP'); },
+      async readHit() { return null; },
+    };
+
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        launchReplay: async (run) => run(page),
+      });
+
+      assert.equal(clicked, true);
+      assert.equal(result.exitCode, 0);
+      assert.equal(result.written, true);
+      assert.equal(result.hitMismatch, undefined);
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
   it('writes role/name evidence for a newly observed semantic element', async () => {
     const item = fixture();
     try {

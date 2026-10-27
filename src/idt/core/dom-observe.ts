@@ -9,9 +9,7 @@ export interface ObservedElement {
   visible: boolean;
 }
 
-/** Returns a self-contained script that evaluates to raw observed elements. */
-export function observeScript(): string {
-  return `(() => {
+const CSS_PATH_SOURCE = `
     const isStableClass = (name) => {
       if (!name || /^\\d/.test(name)) return false;
       if (/^data-v-/i.test(name)) return false;
@@ -50,7 +48,12 @@ export function observeScript(): string {
         current = current.parentElement;
       }
       return null;
-    };
+    };`;
+
+/** Returns a self-contained script that evaluates to raw observed elements. */
+export function observeScript(): string {
+  return `(() => {
+${CSS_PATH_SOURCE}
     const results = [];
     for (const element of Array.from(document.querySelectorAll('*'))) {
       const ownText = Array.from(element.childNodes)
@@ -75,6 +78,29 @@ export function observeScript(): string {
       });
     }
     return results;
+  })()`;
+}
+
+/** Installs a capturing click listener that records the hit element's CSS path. */
+export function hitProbeScript(): string {
+  return `(() => {
+    if (window.__idt_hit_installed) return;
+${CSS_PATH_SOURCE}
+    document.addEventListener('click', (event) => {
+      if (event.target instanceof Element) {
+        window.__idt_hit = uniquePath(event.target);
+      }
+    }, true);
+    window.__idt_hit_installed = true;
+  })()`;
+}
+
+/** Reads and clears the last recorded hit path. */
+export function readHitScript(): string {
+  return `(() => {
+    const hit = typeof window.__idt_hit === 'string' ? window.__idt_hit : null;
+    window.__idt_hit = null;
+    return hit;
   })()`;
 }
 

@@ -9,8 +9,10 @@ import { chromium } from '@playwright/test';
 import type { StateTransitionIR } from './ir-schema.js';
 import { findTriggerActionIndex } from './action-order.js';
 import {
+  hitProbeScript,
   observeScript,
   parseObserved,
+  readHitScript,
   type ObservedElement,
 } from './dom-observe.js';
 
@@ -25,6 +27,8 @@ export interface ReplayPage {
   waitForVisible(role: string, name: string, timeoutMs: number): Promise<void>;
   ariaSnapshot(): Promise<string>;
   observe(): Promise<ObservedElement[]>;
+  installHitProbe(): Promise<void>;
+  readHit(): Promise<string | null>;
 }
 
 export async function replayUntil(
@@ -187,6 +191,21 @@ export async function launchChromiumReplay<T>(
           return parseObserved(await playwrightPage.evaluate(observeScript()));
         } catch {
           return [];
+        }
+      },
+      async installHitProbe() {
+        try {
+          await playwrightPage.evaluate(hitProbeScript());
+        } catch {
+          // Optional observation only: page script execution may be unavailable.
+        }
+      },
+      async readHit() {
+        try {
+          const hit = await playwrightPage.evaluate(readHitScript());
+          return typeof hit === 'string' ? hit : null;
+        } catch {
+          return null;
         }
       },
     };

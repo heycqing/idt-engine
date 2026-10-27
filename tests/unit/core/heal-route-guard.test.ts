@@ -89,6 +89,10 @@ describe('heal route guard ready assertion', () => {
       async observe() {
         return [];
       },
+      async installHitProbe() {},
+      async readHit() {
+        return null;
+      },
     };
 
     const snapshot = await replayUntil(

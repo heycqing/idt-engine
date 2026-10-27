@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseObserved } from '../../../src/idt/core/dom-observe.js';
+import {
+  hitProbeScript,
+  parseObserved,
+  readHitScript,
+} from '../../../src/idt/core/dom-observe.js';
 
 const valid = {
   tag: 'div',
@@ -35,5 +39,28 @@ describe('parseObserved', () => {
       ownText: 'Bearer [REDACTED]',
       alt: '[REDACTED]',
     }]);
+  });
+});
+
+describe('hit probe scripts', () => {
+  it('installs a capturing click listener', () => {
+    assert.match(hitProbeScript(), /addEventListener\([\s\S]*['"]click['"][\s\S]*true\s*\)/);
+  });
+
+  it('never prevents default behavior or stops propagation', () => {
+    const source = hitProbeScript();
+    assert.doesNotMatch(source, /preventDefault/);
+    assert.doesNotMatch(source, /stopPropagation/);
+  });
+
+  it('guards repeated installation with an idempotency flag', () => {
+    const source = hitProbeScript();
+    assert.match(source, /__idt_hit_installed/);
+    assert.match(source, /if\s*\([^)]*__idt_hit_installed[^)]*\)/);
+  });
+
+  it('clears the recorded hit after reading it', () => {
+    const source = readHitScript();
+    assert.match(source, /__idt_hit\s*=\s*null/);
   });
 });

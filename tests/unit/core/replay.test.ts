@@ -48,6 +48,15 @@ class MockReplayPage implements ReplayPage {
     this.calls.push('observe');
     return [];
   }
+
+  async installHitProbe(): Promise<void> {
+    this.calls.push('installHitProbe');
+  }
+
+  async readHit(): Promise<string | null> {
+    this.calls.push('readHit');
+    return null;
+  }
 }
 
 describe('replay', () => {

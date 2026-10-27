@@ -23,7 +23,7 @@ import { generateFlow } from '../../src/idt/core/generate.js';
 import { OpenAiClient } from '../../src/idt/core/openai-client.js';
 import { emitIrFile, emitSpec } from '../../src/idt/core/emitter.js';
 import { heal } from '../../src/idt/core/healer.js';
-import { probe } from '../../src/idt/core/prober.js';
+import { formatHitMismatchWarning, probe } from '../../src/idt/core/prober.js';
 import { playwrightCliEntry } from '../../src/idt/core/runner.js';
 import { selectBatchRoutes } from '../../src/idt/core/batch-routes.js';
 import { readRouterOptions } from '../../src/idt/core/route-url.js';
@@ -470,6 +470,9 @@ program
         }
         const output = result.exitCode === 0 ? console.log : console.error;
         output(result.reason);
+      }
+      if (result.hitMismatch) {
+        console.error(formatHitMismatchWarning(result.hitMismatch));
       }
       process.exit(result.exitCode);
     } catch (err: any) {
