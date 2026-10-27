@@ -5,6 +5,7 @@ import {
   type StateTransitionIR,
 } from './ir-schema.js';
 import { findEvidenceGaps } from './action-evidence.js';
+import { artifactStem } from './artifact-name.js';
 
 export interface ValidateIrOptions {
   projectRoot: string;
@@ -42,7 +43,11 @@ export function validateIr(ir: StateTransitionIR, options: ValidateIrOptions): v
         2
       );
     }
-    if (options.fileStem !== undefined && ir.flowId !== options.fileStem) {
+    if (
+      options.fileStem !== undefined
+      && options.fileStem !== ir.flowId
+      && options.fileStem !== artifactStem(ir)
+    ) {
       throw new ValidationError(
         `flowId "${ir.flowId}" does not match fileStem "${options.fileStem}"`,
         2

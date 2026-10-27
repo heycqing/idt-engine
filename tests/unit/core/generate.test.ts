@@ -192,11 +192,14 @@ describe('generateFlow', () => {
       assert.equal(runSpecCallCount, 0);
 
       const genDir = path.join(tmp, 'tests/e2e/generated');
-      const irFile = path.join(genDir, `${expectedFlowId}.ir.json`);
-      const specFile = path.join(genDir, `${expectedFlowId}.spec.ts`);
+      const expectedStem = `cart__${expectedFlowId}`;
+      const irFile = path.join(genDir, `${expectedStem}.ir.json`);
+      const specFile = path.join(genDir, `${expectedStem}.spec.ts`);
 
       assert.ok(fs.existsSync(irFile), 'IR file should exist');
       assert.ok(fs.existsSync(specFile), 'spec.ts should exist');
+      assert.equal(fs.existsSync(path.join(genDir, `${expectedFlowId}.ir.json`)), false);
+      assert.equal(fs.existsSync(path.join(genDir, `${expectedFlowId}.spec.ts`)), false);
       assert.equal(result.specPath, specFile);
 
       const savedIr = JSON.parse(fs.readFileSync(irFile, 'utf8'));
@@ -241,7 +244,7 @@ describe('generateFlow', () => {
       assert.equal(result.exitCode, 0);
       assert.ok(logs.includes('oracle: prose-case'), 'Logs should contain oracle: prose-case');
 
-      const irFile = path.join(tmp, 'tests/e2e/generated', `${expectedFlowId}.ir.json`);
+      const irFile = path.join(tmp, 'tests/e2e/generated', `cart__${expectedFlowId}.ir.json`);
       const savedIr = JSON.parse(fs.readFileSync(irFile, 'utf8'));
       assert.equal(savedIr.oracle, 'prose-case');
     } finally {
@@ -270,7 +273,11 @@ describe('generateFlow', () => {
 
       const intent = '购物车去结算并支付成功';
       const expectedFlowId = flowIdFromIntent(intent);
-      const expectedSpecPath = path.join(tmp, 'tests/e2e/generated', `${expectedFlowId}.spec.ts`);
+      const expectedSpecPath = path.join(
+        tmp,
+        'tests/e2e/generated',
+        `cart__${expectedFlowId}.spec.ts`,
+      );
 
       const result = await generateFlow({
         projectRoot: tmp,
@@ -321,8 +328,8 @@ describe('generateFlow', () => {
       assert.equal(result.exitCode, 1);
 
       const genDir = path.join(tmp, 'tests/e2e/generated');
-      const irFile = path.join(genDir, `${expectedFlowId}.ir.json`);
-      const specFile = path.join(genDir, `${expectedFlowId}.spec.ts`);
+      const irFile = path.join(genDir, `cart__${expectedFlowId}.ir.json`);
+      const specFile = path.join(genDir, `cart__${expectedFlowId}.spec.ts`);
 
       assert.ok(fs.existsSync(irFile), 'IR file should remain on disk');
       assert.ok(fs.existsSync(specFile), 'spec.ts should remain on disk');
@@ -348,7 +355,11 @@ describe('generateFlow', () => {
 
       const intent = '购物车去结算并支付成功';
       const expectedFlowId = flowIdFromIntent(intent);
-      const specFile = path.join(tmp, 'tests/e2e/generated', `${expectedFlowId}.spec.ts`);
+      const specFile = path.join(
+        tmp,
+        'tests/e2e/generated',
+        `cart__${expectedFlowId}.spec.ts`,
+      );
 
       const res1 = await generateFlow({
         projectRoot: tmp,
@@ -394,8 +405,16 @@ describe('generateFlow', () => {
 
       const intent = '购物车去结算并支付成功';
       const expectedFlowId = flowIdFromIntent(intent);
-      const specFile = path.join(tmp, 'tests/e2e/generated', `${expectedFlowId}.spec.ts`);
-      const irFile = path.join(tmp, 'tests/e2e/generated', `${expectedFlowId}.ir.json`);
+      const specFile = path.join(
+        tmp,
+        'tests/e2e/generated',
+        `cart__${expectedFlowId}.spec.ts`,
+      );
+      const irFile = path.join(
+        tmp,
+        'tests/e2e/generated',
+        `cart__${expectedFlowId}.ir.json`,
+      );
 
       await generateFlow({
         projectRoot: tmp,

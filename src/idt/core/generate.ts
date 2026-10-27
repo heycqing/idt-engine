@@ -5,6 +5,7 @@ import type { ExtractTopologyOptions } from '../extract/topology.js';
 import { emitSpec } from './emitter.js';
 import { readRouterOptions } from './route-url.js';
 import { runPlaywrightSpec } from './runner.js';
+import { artifactStem } from './artifact-name.js';
 
 export interface GenerateFlowOptions {
   projectRoot: string;
@@ -45,12 +46,12 @@ export async function generateFlow(options: {
     route,
   });
 
-  // 2. Emit spec and write to tests/e2e/generated/<flowId>.spec.ts
+  // 2. Emit spec and write to tests/e2e/generated/<artifactStem>.spec.ts
   const source = emitSpec(ir, readRouterOptions(projectRoot));
   const genDir = path.resolve(projectRoot, 'tests/e2e/generated');
   fs.mkdirSync(genDir, { recursive: true });
 
-  const specPath = path.join(genDir, `${ir.flowId}.spec.ts`);
+  const specPath = path.join(genDir, `${artifactStem(ir)}.spec.ts`);
   const tmpSpecPath = `${specPath}.tmp`;
 
   fs.writeFileSync(tmpSpecPath, source, 'utf8');

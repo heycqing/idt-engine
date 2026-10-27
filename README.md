@@ -147,3 +147,8 @@ IR 本身只存应用路由，不带 `#`。同一条 IR 在宿主从 hash 换成
 - 运行某个项目的端到端测试：`pnpm idt:test [spec...] [--project <name>] [playwright 参数]`
 - 列出发现到的 IDT 项目：`pnpm idt:projects`
 - 运行单元测试套件：`pnpm test:idt`（单测在 `tests/unit/`，不访问网络，也不启动浏览器）
+
+新生成的 IR 与 spec 使用同一个 `<路由-slug>__<flowId>` 文件名 stem，例如
+`credit-finance-cash-repay__flow_2b0c09cda9.ir.json` 与同名 `.spec.ts`。路由 slug
+让 PR 文件列表能直接看出覆盖页面；flowId 只由 IR 自身确定，保证同一路由多条意图的
+唯一性，也让 `emit` 无需扫描目录即可确定同名产物。

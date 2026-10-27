@@ -188,14 +188,14 @@ describe('ir-compiler', () => {
 
       // Check file on disk
       const generatedDir = path.join(tmp, 'tests/e2e/generated');
-      const irFile = path.join(generatedDir, `${expectedFlowId}.ir.json`);
+      const irFile = path.join(generatedDir, `cart__${expectedFlowId}.ir.json`);
       assert.ok(fs.existsSync(irFile), `IR file should exist at ${irFile}`);
 
       const savedIr = JSON.parse(fs.readFileSync(irFile, 'utf8'));
       assert.equal(savedIr.flowId, expectedFlowId);
 
       // Check no .spec.ts exists on disk
-      const specFile = path.join(generatedDir, `${expectedFlowId}.spec.ts`);
+      const specFile = path.join(generatedDir, `cart__${expectedFlowId}.spec.ts`);
       assert.ok(!fs.existsSync(specFile), `spec.ts must not exist on disk`);
     } finally {
       removeTempDir(tmp);
@@ -299,7 +299,7 @@ describe('ir-compiler', () => {
       const flowId = flowIdFromIntent(intent);
       const generatedDir = path.join(tmp, 'tests/e2e/generated');
       fs.mkdirSync(generatedDir, { recursive: true });
-      const targetIrFile = path.join(generatedDir, `${flowId}.ir.json`);
+      const targetIrFile = path.join(generatedDir, `cart__${flowId}.ir.json`);
       const originalContent = JSON.stringify({ custom: 'original-data' });
       fs.writeFileSync(targetIrFile, originalContent, 'utf8');
 
@@ -509,7 +509,7 @@ describe('ir-compiler', () => {
         compileIntent({ projectRoot: tmp, intent, route: '/cart', model }),
         (error: any) => {
           assert.equal(error.exitCode, 2);
-          assert.match(error.message, new RegExp(`${flowId}\\.ir\\.json`));
+          assert.match(error.message, new RegExp(`cart__${flowId}\\.ir\\.json`));
           assert.match(error.message, /购物车点击查看详情/);
           assert.match(error.message, /idt:probe/);
           return true;
@@ -517,8 +517,8 @@ describe('ir-compiler', () => {
       );
 
       const generatedDir = path.join(tmp, 'tests/e2e/generated');
-      assert.equal(fs.existsSync(path.join(generatedDir, `${flowId}.ir.json`)), true);
-      assert.equal(fs.existsSync(path.join(generatedDir, `${flowId}.spec.ts`)), false);
+      assert.equal(fs.existsSync(path.join(generatedDir, `cart__${flowId}.ir.json`)), true);
+      assert.equal(fs.existsSync(path.join(generatedDir, `cart__${flowId}.spec.ts`)), false);
     } finally {
       removeTempDir(tmp);
     }

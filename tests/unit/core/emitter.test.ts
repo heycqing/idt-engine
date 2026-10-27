@@ -589,6 +589,45 @@ describe('emitter test suite', () => {
     }
   });
 
+  it('emitIrFile accepts a route slug plus flowId stem and writes the matching sibling spec', () => {
+    const tmp = createTempDir('idt-emit-artifact-stem-');
+    try {
+      const flowId = 'flow_2323232323';
+      const fileStem = `credit-finance-cash-repay__${flowId}`;
+      const irContent = {
+        flowId,
+        intent: '现金还款',
+        oracle: 'prose-case',
+        description: '现金还款页',
+        initialRoute: '/credit/finance/cash-repay',
+        setup: { notes: [] },
+        unresolved: [],
+        stages: [
+          {
+            stageIndex: 0,
+            stageName: '现金还款',
+            routePattern: '/credit/finance/cash-repay',
+            actions: [],
+            invariants: {
+              routeGuard: {
+                targetUrlPattern: '/credit/finance/cash-repay$',
+              },
+            },
+          },
+        ],
+      };
+      const irPath = path.join(tmp, `${fileStem}.ir.json`);
+      fs.writeFileSync(irPath, JSON.stringify(irContent, null, 2), 'utf8');
+
+      const result = emitIrFile(tmp, irPath);
+
+      assert.strictEqual(result.specPath, path.join(tmp, `${fileStem}.spec.ts`));
+      assert.strictEqual(fs.readFileSync(result.specPath, 'utf8'), emitSpec(irContent));
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
   // Requirement 13: Invalid IR with existing OLD spec throws exitCode 2, spec remains OLD, no new spec created
   it('Requirement 13: CLICK without network or routeGuard throws exitCode 2, old spec remains unchanged', () => {
     const tmp = createTempDir('idt-emit-r13-');

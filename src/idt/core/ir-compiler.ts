@@ -15,6 +15,7 @@ import { validateIr, ValidationError } from './validate-ir.js';
 import { findEvidenceGaps } from './action-evidence.js';
 import type { ModelClient } from './openai-client.js';
 import { redactSecrets } from './secret-redaction.js';
+import { artifactStem } from './artifact-name.js';
 
 export { type ModelClient } from './openai-client.js';
 export { redactSecrets } from './secret-redaction.js';
@@ -101,9 +102,10 @@ export async function compileIntent(
 
   // Check target file conflicts early
   const flowId = flowIdFromIntent(intent);
+  const stem = artifactStem({ initialRoute: routePath[0], flowId });
   const genDir = path.resolve(projectRoot, 'tests/e2e/generated');
-  const targetIrFile = path.join(genDir, `${flowId}.ir.json`);
-  const targetSpecFile = path.join(genDir, `${flowId}.spec.ts`);
+  const targetIrFile = path.join(genDir, `${stem}.ir.json`);
+  const targetSpecFile = path.join(genDir, `${stem}.spec.ts`);
 
   if (!force && (fs.existsSync(targetIrFile) || fs.existsSync(targetSpecFile))) {
     const error = new Error(
@@ -247,9 +249,9 @@ export async function compileIntent(
     checkEvidence: false,
   });
 
-  // 7. Write tests/e2e/generated/<flowId>.ir.json (.tmp then rename)
+  // 7. Write tests/e2e/generated/<artifactStem>.ir.json (.tmp then rename)
   fs.mkdirSync(genDir, { recursive: true });
-  const tmpIrFile = path.join(genDir, `${flowId}.ir.json.tmp`);
+  const tmpIrFile = path.join(genDir, `${stem}.ir.json.tmp`);
   fs.writeFileSync(tmpIrFile, JSON.stringify(ir, null, 2), 'utf8');
   fs.renameSync(tmpIrFile, targetIrFile);
 
