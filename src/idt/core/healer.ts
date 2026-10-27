@@ -100,21 +100,20 @@ export function locateHealTarget(
   }
 
   const lineText = lines[failure.line - 1];
-  if (!lineText.includes('getByRole(')) {
-    const err = new Error(`Line ${failure.line} does not contain getByRole(`);
-    (err as any).exitCode = 2;
-    throw err;
-  }
-
-  const matches = Array.from(
+  const roleMatches = Array.from(
     lineText.matchAll(
       /getByRole\(\s*("(?:[^"\\]|\\.)*")\s*,\s*\{\s*name:\s*("(?:[^"\\]|\\.)*")\s*\}\)/g,
     ),
   );
+  const textMatches = Array.from(
+    lineText.matchAll(
+      /getByText\(\s*("(?:[^"\\]|\\.)*")\s*,\s*\{\s*exact:\s*true\s*\}\)/g,
+    ),
+  );
 
-  if (matches.length !== 1) {
+  if (roleMatches.length + textMatches.length !== 1) {
     const err = new Error(
-      `Line ${failure.line} does not contain exactly one getByRole(role, { name }) call`,
+      `Line ${failure.line} does not contain exactly one supported named locator call`,
     );
     (err as any).exitCode = 2;
     throw err;
@@ -123,10 +122,15 @@ export function locateHealTarget(
   let role: string;
   let name: string;
   try {
-    role = JSON.parse(matches[0][1]);
-    name = JSON.parse(matches[0][2]);
+    if (roleMatches.length === 1) {
+      role = JSON.parse(roleMatches[0][1]);
+      name = JSON.parse(roleMatches[0][2]);
+    } else {
+      role = 'text';
+      name = JSON.parse(textMatches[0][1]);
+    }
   } catch (parseErr: any) {
-    const err = new Error(`Failed to parse getByRole arguments: ${parseErr.message}`);
+    const err = new Error(`Failed to parse locator arguments: ${parseErr.message}`);
     (err as any).exitCode = 2;
     throw err;
   }

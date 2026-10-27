@@ -568,6 +568,10 @@ describe('ir-compiler', () => {
     // readyRole/readyName 必须和 targetName 受同样约束，否则模型会拿页面标题顶替
     assert.match(IR_SYSTEM_PROMPT, /readyRole and readyName are under the SAME rule/);
     assert.match(IR_SYSTEM_PROMPT, /omit readyRole and readyName entirely/);
+    assert.equal(
+      IR_SYSTEM_PROMPT.includes('never use it for routeGuard readyRole'),
+      false,
+    );
   });
   it('extracts the topology with the globs handed in by the caller', async () => {
     const tmp = createTempDir();

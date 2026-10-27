@@ -22,6 +22,7 @@ export interface ReplayPage {
   check(role: string, name: string, timeoutMs: number): Promise<void>;
   selectOption(role: string, name: string, value: string, timeoutMs: number): Promise<void>;
   waitForURL(pattern: string, timeoutMs: number): Promise<void>;
+  waitForVisible(role: string, name: string, timeoutMs: number): Promise<void>;
   ariaSnapshot(): Promise<string>;
   observe(): Promise<ObservedElement[]>;
 }
@@ -109,6 +110,13 @@ export async function replayUntilCaptured<T>(
       const guard = stage.invariants.routeGuard;
       const timeout = triggerIndex >= 0 ? stage.actions[triggerIndex].timeoutMs : 5000;
       await page.waitForURL(toGuardPattern(guard.targetUrlPattern, router), timeout);
+      if (
+        stageIdx < target.stageIndex &&
+        guard.readyRole &&
+        guard.readyName
+      ) {
+        await page.waitForVisible(guard.readyRole, guard.readyName, timeout);
+      }
     }
 
     // ready 断言就在 waitForURL 之后，此刻的页面状态正是要比对的那一帧
@@ -167,6 +175,9 @@ export async function launchChromiumReplay<T>(
         await playwrightPage.waitForURL(new RegExp(pattern), {
           timeout: timeoutMs,
         });
+      },
+      async waitForVisible(role: string, name: string, timeoutMs: number) {
+        await locate(role, name).waitFor({ state: 'visible', timeout: timeoutMs });
       },
       async ariaSnapshot() {
         return await playwrightPage.locator('body').ariaSnapshot();

@@ -59,6 +59,26 @@ function getBaseValidIr(): StateTransitionIR {
 }
 
 describe('validateIr', () => {
+  it('accepts a text routeGuard ready role and name', () => {
+    const tmp = createTempDir();
+    try {
+      const ir = getBaseValidIr();
+      ir.stages[0].invariants.routeGuard = {
+        targetUrlPattern: '/complete$',
+        readyRole: 'text',
+        readyName: '支付完成',
+      };
+
+      assert.doesNotThrow(() => validateIr(ir, {
+        projectRoot: tmp,
+        routePath: ['/cart'],
+        mode: 'gen',
+      }));
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
   it('Requirement 10: Legal IR with non-empty unresolved throws exitCode 2', () => {
     const tmp = createTempDir();
     try {

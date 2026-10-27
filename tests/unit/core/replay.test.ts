@@ -35,6 +35,10 @@ class MockReplayPage implements ReplayPage {
     this.calls.push(`waitForURL:${pattern}:${timeoutMs}`);
   }
 
+  async waitForVisible(role: string, name: string, timeoutMs: number): Promise<void> {
+    this.calls.push(`waitForVisible:${role}:${name}:${timeoutMs}`);
+  }
+
   async ariaSnapshot(): Promise<string> {
     this.calls.push('ariaSnapshot');
     return '- button "确认去结账订单"';
@@ -175,5 +179,48 @@ describe('replay', () => {
       'ariaSnapshot',
     ]);
     assert.ok(!mockPage.calls.includes('click:button:finish:4000'));
+  });
+
+  it('uses the text locator path for completed routeGuard ready assertions during routeGuard replay', async () => {
+    const ir: StateTransitionIR = {
+      flowId: 'flow_1122334455', intent: 'multi stage route guards',
+      oracle: 'regression-lock', description: 'multi stage route guards',
+      initialRoute: '/step1', setup: { notes: [] }, unresolved: [],
+      stages: [
+        {
+          stageIndex: 0, stageName: 'step 1', routePattern: '/step1', actions: [],
+          invariants: {
+            network: [],
+            routeGuard: {
+              targetUrlPattern: '^/step2$', readyRole: 'text', readyName: '第二步',
+            },
+          },
+        },
+        {
+          stageIndex: 1, stageName: 'step 2', routePattern: '/step2', actions: [],
+          invariants: {
+            network: [],
+            routeGuard: {
+              targetUrlPattern: '^/done$', readyRole: 'heading', readyName: '完成',
+            },
+          },
+        },
+      ],
+    };
+
+    const mockPage = new MockReplayPage();
+    await replayUntil(
+      ir,
+      { stageIndex: 1, actionIndex: 0, kind: 'routeGuard' },
+      mockPage,
+    );
+
+    assert.deepEqual(mockPage.calls, [
+      'goto:/step1',
+      'waitForURL:^/step2$:5000',
+      'waitForVisible:text:第二步:5000',
+      'waitForURL:^/done$:5000',
+      'ariaSnapshot',
+    ]);
   });
 });

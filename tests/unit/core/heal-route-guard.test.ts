@@ -81,6 +81,7 @@ describe('heal route guard ready assertion', () => {
       async waitForURL(pattern) {
         calls.push(`waitForURL ${pattern}`);
       },
+      async waitForVisible() {},
       async ariaSnapshot() {
         calls.push('snapshot');
         return '- heading "真实标题"';
@@ -99,6 +100,60 @@ describe('heal route guard ready assertion', () => {
     assert.equal(snapshot, '- heading "真实标题"');
     // history 模式下 toGuardPattern 原样返回 targetUrlPattern，不补 $
     assert.deepEqual(calls, ['goto /', 'waitForURL /', 'snapshot']);
+  });
+
+  it('locates and heals a text routeGuard ready assertion', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'idt-heal-text-guard-'));
+    try {
+      const ir = guardIr('智能交易登陆');
+      const guard = ir.stages[0].invariants.routeGuard!;
+      guard.readyRole = 'text';
+      const { irPath, specPath, spec, line } = write(dir, ir);
+
+      assert.match(spec, /getByText\("智能交易登陆", \{ exact: true \}\)/);
+      assert.equal(
+        locateHealTarget(spec, ir, {
+          line,
+          message: 'TimeoutError: expect.toBeVisible Timeout',
+        }).role,
+        'text',
+      );
+
+      let run = 0;
+      const result = await heal({
+        projectRoot: dir,
+        specPath,
+        runSpec: async () => {
+          run += 1;
+          return run === 1
+            ? {
+                exitCode: 1,
+                report: {
+                  suites: [{ specs: [{ tests: [{ results: [{
+                    status: 'failed',
+                    errors: [{
+                      message: 'TimeoutError: expect.toBeVisible Timeout',
+                      location: { line },
+                    }],
+                  }] }] }] }],
+                },
+              }
+            : { exitCode: 0, report: {} };
+        },
+        replay: async () => '- text: 智能交易登录',
+      });
+
+      assert.equal(result.exitCode, 0, result.reason);
+      assert.equal(result.newTargetName, '智能交易登录');
+      const healedIr = JSON.parse(fs.readFileSync(irPath, 'utf8'));
+      assert.equal(healedIr.stages[0].invariants.routeGuard.readyName, '智能交易登录');
+      assert.match(
+        fs.readFileSync(specPath, 'utf8'),
+        /getByText\("智能交易登录", \{ exact: true \}\)/,
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('rewrites readyName in the IR and re-emits the spec', async () => {

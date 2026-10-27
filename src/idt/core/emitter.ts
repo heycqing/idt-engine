@@ -38,6 +38,13 @@ const FORBIDDEN_TOKENS = [
   'enableVisualSnapshot',
 ];
 
+function renderNamedLocator(role: string, name: string): string {
+  const nameStr = JSON.stringify(name);
+  return role === 'text'
+    ? `page.getByText(${nameStr}, { exact: true })`
+    : `page.getByRole(${JSON.stringify(role)}, { name: ${nameStr} })`;
+}
+
 export function emitSpec(
   ir: unknown,
   router: RouterUrlOptions = DEFAULT_ROUTER_URL_OPTIONS,
@@ -203,15 +210,10 @@ export function emitSpec(
     const triggerTimeout = triggerAction ? triggerAction.timeoutMs : 5000;
 
     const renderActionExpr = (action: Action): string => {
-      const roleStr = JSON.stringify(action.targetRole);
-      const nameStr = JSON.stringify(action.targetName);
       const timeout = action.timeoutMs;
       // text 是伪 role：没有 ARIA role 但带静态文本的可点元素。exact 避免
       // 「全部」命中「全部撤单」；不加 .first()，文本重复就让 strict mode 报错。
-      const locator =
-        action.targetRole === 'text'
-          ? `page.getByText(${nameStr}, { exact: true })`
-          : `page.getByRole(${roleStr}, { name: ${nameStr} })`;
+      const locator = renderNamedLocator(action.targetRole, action.targetName);
       switch (action.actionType) {
         case 'CLICK':
           return `${locator}.click({ timeout: ${timeout} })`;
@@ -286,11 +288,7 @@ export function emitSpec(
           locator += `.filter({ hasText: ${JSON.stringify(domDelta.appearedText)} })`;
         }
       } else {
-        const name = JSON.stringify(domDelta.appearedName);
-        locator =
-          domDelta.appearedRole === 'text'
-            ? `page.getByText(${name}, { exact: true })`
-            : `page.getByRole(${JSON.stringify(domDelta.appearedRole)}, { name: ${name} })`;
+        locator = renderNamedLocator(domDelta.appearedRole, domDelta.appearedName);
       }
       lines.push(
         `  await expect(${locator}).toBeVisible({ timeout: ${triggerTimeout} });`,
@@ -307,10 +305,8 @@ export function emitSpec(
       );
       lines.push(`  await expect(page).toHaveURL(new RegExp(${patternStr}));`);
       if (routeGuard.readyRole && routeGuard.readyName) {
-        const rRole = JSON.stringify(routeGuard.readyRole);
-        const rName = JSON.stringify(routeGuard.readyName);
         lines.push(
-          `  await expect(page.getByRole(${rRole}, { name: ${rName} })).toBeVisible();`
+          `  await expect(${renderNamedLocator(routeGuard.readyRole, routeGuard.readyName)}).toBeVisible();`
         );
       }
     }
