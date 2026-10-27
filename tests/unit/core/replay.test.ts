@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { StateTransitionIR } from '../../../src/idt/core/ir-schema.js';
 import { replayUntil, type ReplayPage } from '../../../src/idt/core/replay.js';
+import type { ObservedElement } from '../../../src/idt/core/dom-observe.js';
 
 class MockReplayPage implements ReplayPage {
   calls: string[] = [];
@@ -37,6 +38,11 @@ class MockReplayPage implements ReplayPage {
   async ariaSnapshot(): Promise<string> {
     this.calls.push('ariaSnapshot');
     return '- button "确认去结账订单"';
+  }
+
+  async observe(): Promise<ObservedElement[]> {
+    this.calls.push('observe');
+    return [];
   }
 }
 

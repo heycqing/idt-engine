@@ -1,4 +1,5 @@
 import { parseAriaSnapshot } from './aria-snapshot.js';
+import type { ObservedElement } from './dom-observe.js';
 
 export interface DomDeltaCandidate {
   role: string;
@@ -34,4 +35,19 @@ export function diffAriaSnapshots(
   }
 
   return candidates;
+}
+
+export function diffObserved(
+  before: ObservedElement[],
+  after: ObservedElement[],
+): ObservedElement[] {
+  const beforeCss = new Set(before.map(({ css }) => css));
+  const appearedCss = new Set<string>();
+  const appeared: ObservedElement[] = [];
+  for (const element of after) {
+    if (!element.visible || beforeCss.has(element.css) || appearedCss.has(element.css)) continue;
+    appearedCss.add(element.css);
+    appeared.push(element);
+  }
+  return appeared;
 }

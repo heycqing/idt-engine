@@ -85,6 +85,9 @@ describe('heal route guard ready assertion', () => {
         calls.push('snapshot');
         return '- heading "真实标题"';
       },
+      async observe() {
+        return [];
+      },
     };
 
     const snapshot = await replayUntil(

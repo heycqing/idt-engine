@@ -279,11 +279,19 @@ export function emitSpec(
 
     const domDelta = stage.invariants.domDelta;
     if (domDelta) {
-      const name = JSON.stringify(domDelta.appearedName);
-      const locator =
-        domDelta.appearedRole === 'text'
-          ? `page.getByText(${name}, { exact: true })`
-          : `page.getByRole(${JSON.stringify(domDelta.appearedRole)}, { name: ${name} })`;
+      let locator: string;
+      if ('appearedSelector' in domDelta) {
+        locator = `page.locator(${JSON.stringify(domDelta.appearedSelector)})`;
+        if (domDelta.appearedText !== undefined) {
+          locator += `.filter({ hasText: ${JSON.stringify(domDelta.appearedText)} })`;
+        }
+      } else {
+        const name = JSON.stringify(domDelta.appearedName);
+        locator =
+          domDelta.appearedRole === 'text'
+            ? `page.getByText(${name}, { exact: true })`
+            : `page.getByRole(${JSON.stringify(domDelta.appearedRole)}, { name: ${name} })`;
+      }
       lines.push(
         `  await expect(${locator}).toBeVisible({ timeout: ${triggerTimeout} });`,
       );

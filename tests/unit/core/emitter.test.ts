@@ -67,6 +67,29 @@ describe('emitter test suite', () => {
       /expect\(page\.getByText\("操作完成", \{ exact: true \}\)\)\.toBeVisible/,
     );
   });
+
+  it('renders a selector domDelta with optional text filtering', () => {
+    const base: any = {
+      flowId: 'flow_1234567890', intent: '出现结果', oracle: 'regression-lock',
+      description: '点击后出现结果', initialRoute: '/form', setup: { notes: [] },
+      unresolved: [],
+      stages: [{
+        stageIndex: 0, stageName: '提交', routePattern: '/form',
+        actions: [{ actionType: 'CLICK', targetRole: 'button', targetName: '提交', timeoutMs: 2345 }],
+        invariants: { network: [], domDelta: { appearedSelector: '#app > div.result' } },
+      }],
+    };
+
+    assert.match(
+      emitSpec(base),
+      /expect\(page\.locator\("#app > div\.result"\)\)\.toBeVisible\(\{ timeout: 2345 \}\)/,
+    );
+    base.stages[0].invariants.domDelta.appearedText = '完成 "ok"';
+    assert.match(
+      emitSpec(base),
+      /page\.locator\("#app > div\.result"\)\.filter\(\{ hasText: "完成 \\"ok\\"" \}\)/,
+    );
+  });
   const projectRoot = process.cwd();
   const fixturesDir = path.resolve(projectRoot, 'tests/unit/core/fixtures');
 

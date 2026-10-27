@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { probe, type ProbeTarget } from '../../../src/idt/core/prober.js';
 import type { StateTransitionIR } from '../../../src/idt/core/ir-schema.js';
+import type { ObservedElement } from '../../../src/idt/core/dom-observe.js';
 
 function makeIr(): StateTransitionIR {
   return {
@@ -66,7 +67,119 @@ function replayResult(
   return { before, after, beforeUrl, afterUrl };
 }
 
+function observed(
+  values: Partial<ObservedElement>[],
+): ObservedElement[] {
+  return values.map((value, index) => ({
+    tag: 'div',
+    role: null,
+    ownText: `元素${index}`,
+    alt: null,
+    css: `#item-${index}`,
+    visible: true,
+    ...value,
+  }));
+}
+
+function domReplayResult(
+  beforeObserved: ObservedElement[],
+  afterObserved: ObservedElement[],
+  beforeUrl = 'http://host/form',
+  afterUrl = beforeUrl,
+) {
+  return { before: '', after: '', beforeUrl, afterUrl, beforeObserved, afterObserved };
+}
+
 describe('probe', () => {
+  it('writes role/name evidence for a newly observed semantic element', async () => {
+    const item = fixture();
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        replay: async () => domReplayResult(
+          observed([{ tag: 'button', ownText: '提交', css: '#submit' }]),
+          observed([
+            { tag: 'button', ownText: '提交', css: '#submit' },
+            { tag: 'div', role: 'dialog', ownText: '提交成功', css: '#success' },
+          ]),
+        ),
+      });
+
+      assert.equal(result.observation, 'dom');
+      assert.deepEqual(result.delta, { appearedRole: 'dialog', appearedName: '提交成功' });
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
+  it('writes selector evidence for a newly observed text-only element', async () => {
+    const item = fixture();
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        replay: async () => domReplayResult(
+          observed([{ ownText: '原内容', css: '#old' }]),
+          observed([
+            { ownText: '原内容', css: '#old' },
+            { ownText: '查看详情', css: '#app > div.details' },
+          ]),
+        ),
+      });
+
+      assert.equal(result.observation, 'dom');
+      assert.deepEqual(result.delta, {
+        appearedSelector: '#app > div.details',
+        appearedText: '查看详情',
+      });
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to aria when DOM observation returns an empty array', async () => {
+    const item = fixture();
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        replay: async () => ({
+          ...replayResult('', '- dialog "完成"'),
+          beforeObserved: [],
+          afterObserved: [],
+        }),
+      });
+
+      assert.equal(result.observation, 'aria');
+      assert.deepEqual(result.delta, { appearedRole: 'dialog', appearedName: '完成' });
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps route evidence ahead of supplied DOM observations', async () => {
+    const item = fixture();
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        replay: async () => domReplayResult(
+          observed([{ ownText: '旧', css: '#old' }]),
+          observed([{ role: 'dialog', ownText: '新', css: '#new' }]),
+          'http://host/form',
+          'http://host/done',
+        ),
+      });
+
+      assert.equal(result.evidence, 'route');
+      assert.equal(result.observation, undefined);
+      const written = JSON.parse(fs.readFileSync(item.irPath, 'utf8'));
+      assert.equal(written.stages[0].invariants.domDelta, undefined);
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
   it('writes the unique appeared element to the IR and re-emits the spec', async () => {
     const item = fixture();
     try {

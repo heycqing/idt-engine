@@ -65,10 +65,16 @@ export const RouteGuardSchema = z.object({
   readyName: z.string().min(1).optional(),
 });
 
-export const DomDeltaSchema = z.object({
-  appearedRole: AppearedRoleSchema,
-  appearedName: z.string().min(1),
-});
+export const DomDeltaSchema = z.union([
+  z.object({
+    appearedRole: AppearedRoleSchema,
+    appearedName: z.string().min(1),
+  }).strict(),
+  z.object({
+    appearedSelector: z.string().min(1),
+    appearedText: z.string().optional(),
+  }).strict(),
+]);
 
 export const StageSchema = z.object({
   stageIndex: z.number().int().nonnegative(),

@@ -8,6 +8,11 @@ import {
 import { chromium } from '@playwright/test';
 import type { StateTransitionIR } from './ir-schema.js';
 import { findTriggerActionIndex } from './action-order.js';
+import {
+  observeScript,
+  parseObserved,
+  type ObservedElement,
+} from './dom-observe.js';
 
 export interface ReplayPage {
   url(): string;
@@ -18,6 +23,7 @@ export interface ReplayPage {
   selectOption(role: string, name: string, value: string, timeoutMs: number): Promise<void>;
   waitForURL(pattern: string, timeoutMs: number): Promise<void>;
   ariaSnapshot(): Promise<string>;
+  observe(): Promise<ObservedElement[]>;
 }
 
 export async function replayUntil(
@@ -26,6 +32,16 @@ export async function replayUntil(
   page: ReplayPage,
   router: RouterUrlOptions = DEFAULT_ROUTER_URL_OPTIONS,
 ): Promise<string> {
+  return replayUntilCaptured(ir, target, page, router, (currentPage) => currentPage.ariaSnapshot());
+}
+
+export async function replayUntilCaptured<T>(
+  ir: StateTransitionIR,
+  target: { stageIndex: number; actionIndex: number; kind?: 'action' | 'routeGuard' },
+  page: ReplayPage,
+  router: RouterUrlOptions,
+  capture: (page: ReplayPage) => Promise<T>,
+): Promise<T> {
   // 1. page.goto(初始路由装配出的地址)。不写主机名。
   await page.goto(toBrowserUrl(ir.initialRoute, router));
 
@@ -54,7 +70,7 @@ export async function replayUntil(
       if (stopAtAction && stageIdx === target.stageIndex && actionIndex === target.actionIndex) {
         // Stop at failure action. Do not execute the failure action itself.
         // Stage containing failure action does not execute route guard.
-        return await page.ariaSnapshot();
+        return await capture(page);
       }
 
       const action = stage.actions[actionIndex];
@@ -97,11 +113,11 @@ export async function replayUntil(
 
     // ready 断言就在 waitForURL 之后，此刻的页面状态正是要比对的那一帧
     if (isGuardTarget) {
-      return await page.ariaSnapshot();
+      return await capture(page);
     }
   }
 
-  return await page.ariaSnapshot();
+  return await capture(page);
 }
 
 export async function launchChromiumReplay<T>(
@@ -154,6 +170,13 @@ export async function launchChromiumReplay<T>(
       },
       async ariaSnapshot() {
         return await playwrightPage.locator('body').ariaSnapshot();
+      },
+      async observe() {
+        try {
+          return parseObserved(await playwrightPage.evaluate(observeScript()));
+        } catch {
+          return [];
+        }
       },
     };
 

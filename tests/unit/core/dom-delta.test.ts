@@ -2,8 +2,10 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   diffAriaSnapshots,
+  diffObserved,
   isUsableTextName,
 } from '../../../src/idt/core/dom-delta.js';
+import type { ObservedElement } from '../../../src/idt/core/dom-observe.js';
 
 describe('diffAriaSnapshots', () => {
   it('returns role and name pairs that appear only after the action', () => {
@@ -103,5 +105,39 @@ describe('isUsableTextName', () => {
     for (const name of ['确认', '我知道了', '查看详情', '请输入第一创业证券客户号']) {
       assert.equal(isUsableTextName(name), true, name);
     }
+  });
+});
+
+describe('diffObserved', () => {
+  const element = (css: string, ownText: string, visible = true): ObservedElement => ({
+    tag: 'div', role: null, ownText, alt: null, css, visible,
+  });
+
+  // 文案会随状态变，css 路径更稳；身份必须按 css，否则同节点改字会被误判成新出现。
+  it('uses css identity and returns only newly appeared elements', () => {
+    assert.deepEqual(
+      diffObserved(
+        [element('#same', '旧文本')],
+        [element('#same', '新文本'), element('#new', '新增')],
+      ),
+      [element('#new', '新增')],
+    );
+  });
+
+  // 不可见节点不能当定位候选，否则 healer 会点到用户看不见的东西。
+  it('skips invisible appeared elements', () => {
+    assert.deepEqual(diffObserved([], [element('#hidden', '隐藏', false)]), []);
+  });
+
+  // 同一 css 多条只留首次出现的那条，顺序跟 after 对齐，方便下游按出现先后挑候选。
+  it('deduplicates by css while preserving after order', () => {
+    assert.deepEqual(
+      diffObserved([], [
+        element('#second', '第二'),
+        element('#first', '第一'),
+        element('#second', '重复'),
+      ]),
+      [element('#second', '第二'), element('#first', '第一')],
+    );
   });
 });

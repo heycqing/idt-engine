@@ -14,8 +14,10 @@ import {
 import { validateIr, ValidationError } from './validate-ir.js';
 import { findEvidenceGaps } from './action-evidence.js';
 import type { ModelClient } from './openai-client.js';
+import { redactSecrets } from './secret-redaction.js';
 
 export { type ModelClient } from './openai-client.js';
+export { redactSecrets } from './secret-redaction.js';
 
 export const IR_SYSTEM_PROMPT = `You are a frontend testing and state transition compiler.
 Your task is to generate a StateTransitionIR JSON object matching the StateTransitionIRSchema.
@@ -59,13 +61,6 @@ Requirements:
 6a. routeGuard.readyRole and readyName are under the SAME rule as targetRole and targetName: the pair must appear verbatim in that page's "elements" list, and an element with "dynamic": true has no usable name. If no element of the page qualifies, omit readyRole and readyName entirely and let the routeGuard assert the URL alone. Never fall back to the page title, a semanticKeyword, or any other string outside the elements list.
 7. "unresolved" is only for operations the intent asks for but the payload cannot support: a required control missing from the elements list, a value with no matching input, or a name that is dynamic. Never put complaints about the payload itself (such as missing code slices) in it. A non-empty "unresolved" blocks spec emission, so leave it empty when the flow is fully determined.
 `;
-
-export function redactSecrets(text: string): string {
-  return text
-    .replace(/sk-[A-Za-z0-9]{8,}/g, '[REDACTED]')
-    .replace(/(Bearer\s+)(?!\[REDACTED\])\S+/g, '$1[REDACTED]')
-    .replace(/AKIA[0-9A-Z]{16}/g, '[REDACTED]');
-}
 
 export interface CompileIntentOptions {
   projectRoot: string;

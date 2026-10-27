@@ -60,7 +60,7 @@ type Frame = {
 };
 
 // 标签到 ARIA role 的映射。宿主换组件库时只改这张表。
-const TAG_ROLES: Record<string, ElementRole> = {
+export const TAG_ROLES: Record<string, ElementRole> = {
   button: 'button',
   'van-button': 'button',
   'router-link': 'link',

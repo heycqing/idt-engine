@@ -1,20 +1,44 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { findTriggerActionIndex } from './action-order.js';
-import { diffAriaSnapshots, type DomDeltaCandidate } from './dom-delta.js';
+import {
+  diffAriaSnapshots,
+  diffObserved,
+  type DomDeltaCandidate,
+} from './dom-delta.js';
 import { emitSpec } from './emitter.js';
 import {
   AppearedRoleSchema,
   StateTransitionIRSchema,
   type Action,
+  type DomDelta,
   type StateTransitionIR,
 } from './ir-schema.js';
 import {
   launchChromiumReplay,
   replayUntil,
+  replayUntilCaptured,
   type ReplayPage,
 } from './replay.js';
 import { fromBrowserUrl, readRouterOptions } from './route-url.js';
+import type { ObservedElement } from './dom-observe.js';
+import { TAG_ROLES } from '../extract/vue-sfc.js';
+
+export interface SelectorDeltaCandidate {
+  selector: string;
+  text?: string;
+}
+
+export type ProbeCandidate = DomDeltaCandidate | SelectorDeltaCandidate;
+
+export interface ProbeReplayResult {
+  before: string;
+  after: string;
+  beforeUrl: string;
+  afterUrl: string;
+  beforeObserved?: ObservedElement[];
+  afterObserved?: ObservedElement[];
+}
 
 export interface ProbeTarget {
   stageIndex: number;
@@ -29,12 +53,7 @@ export interface ProbeOptions {
   replay?: (
     ir: StateTransitionIR,
     target: ProbeTarget,
-  ) => Promise<{
-    before: string;
-    after: string;
-    beforeUrl: string;
-    afterUrl: string;
-  }>;
+  ) => Promise<ProbeReplayResult>;
 }
 
 export interface ProbeResult {
@@ -42,8 +61,9 @@ export interface ProbeResult {
   written?: boolean;
   evidence?: 'route' | 'dom';
   route?: { targetUrlPattern: string; discardedReady: boolean };
-  delta?: { appearedRole: string; appearedName: string };
-  candidates?: DomDeltaCandidate[];
+  delta?: DomDelta;
+  candidates?: ProbeCandidate[];
+  observation?: 'dom' | 'aria';
   reason?: string;
 }
 
@@ -88,6 +108,29 @@ function findProbeTarget(ir: StateTransitionIR): ProbeTarget | null {
   return null;
 }
 
+function observedCandidates(
+  before: ObservedElement[],
+  after: ObservedElement[],
+): ProbeCandidate[] {
+  const appeared = diffObserved(before, after);
+
+  // Prefer semantic locators: role/name evidence survives DOM refactors better
+  // than a CSS structure path. Selector evidence is only the fallback layer.
+  const semantic: DomDeltaCandidate[] = [];
+  for (const element of appeared) {
+    const roleValue = element.role?.trim() || TAG_ROLES[element.tag];
+    const role = AppearedRoleSchema.safeParse(roleValue);
+    const name = element.ownText || element.alt || '';
+    if (role.success && name) semantic.push({ role: role.data, name });
+  }
+  if (semantic.length > 0) return semantic;
+
+  return appeared.map((element) => ({
+    selector: element.css,
+    ...(element.ownText ? { text: element.ownText } : {}),
+  }));
+}
+
 export async function probe(options: ProbeOptions): Promise<ProbeResult> {
   if (options.pick !== undefined && (!Number.isInteger(options.pick) || options.pick < 1)) {
     return { exitCode: 2, reason: '--pick 序号必须是从 1 开始的整数' };
@@ -124,23 +167,37 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
       options.projectRoot,
       currentIr.setup.storageStatePath,
       async (page) => {
-        const before = await replayUntil(currentIr, currentTarget, page, router);
+        const beforeFrame = await replayUntilCaptured(
+          currentIr,
+          currentTarget,
+          page,
+          router,
+          async (currentPage) => {
+            const observed = await currentPage.observe();
+            const aria = await currentPage.ariaSnapshot();
+            return { observed, aria };
+          },
+        );
         const beforeUrl = page.url();
         const action = currentIr.stages[currentTarget.stageIndex].actions[currentTarget.actionIndex];
         await executeAction(page, action);
         await new Promise((resolve) => setTimeout(resolve, waitMs));
-        const after = await page.ariaSnapshot();
-        return { before, after, beforeUrl, afterUrl: page.url() };
+        const afterObserved = await page.observe();
+        const needsAriaFallback = beforeFrame.observed.length === 0 || afterObserved.length === 0;
+        const after = needsAriaFallback ? await page.ariaSnapshot() : '';
+        return {
+          before: beforeFrame.aria,
+          after,
+          beforeUrl,
+          afterUrl: page.url(),
+          beforeObserved: beforeFrame.observed,
+          afterObserved,
+        };
       },
       options.baseUrl,
     ));
 
-  let snapshots: {
-    before: string;
-    after: string;
-    beforeUrl: string;
-    afterUrl: string;
-  };
+  let snapshots: ProbeReplayResult;
   try {
     snapshots = await replayImpl(ir, target);
   } catch (error) {
@@ -183,12 +240,18 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
     };
   }
 
-  const candidates = diffAriaSnapshots(snapshots.before, snapshots.after);
+  const useDom = Boolean(
+    snapshots.beforeObserved?.length && snapshots.afterObserved?.length,
+  );
+  const observation: 'dom' | 'aria' = useDom ? 'dom' : 'aria';
+  const candidates = useDom
+    ? observedCandidates(snapshots.beforeObserved!, snapshots.afterObserved!)
+    : diffAriaSnapshots(snapshots.before, snapshots.after);
   if (candidates.length === 0) {
-    return { exitCode: 2, reason: '这个动作没有可观察的 DOM 效果' };
+    return { exitCode: 2, observation, reason: '这个动作没有可观察的 DOM 效果' };
   }
   if (options.pick === undefined && candidates.length > 1) {
-    return { exitCode: 2, candidates };
+    return { exitCode: 2, candidates, observation };
   }
   if (options.pick !== undefined && options.pick > candidates.length) {
     return {
@@ -198,6 +261,25 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
   }
 
   const candidate = candidates[(options.pick ?? 1) - 1];
+  if ('selector' in candidate) {
+    const delta: DomDelta = {
+      appearedSelector: candidate.selector,
+      ...(candidate.text ? { appearedText: candidate.text } : {}),
+    };
+    const updatedIr = structuredClone(ir);
+    updatedIr.stages[target.stageIndex].invariants.domDelta = delta;
+    let specContent: string;
+    try {
+      specContent = emitSpec(updatedIr, router);
+    } catch (error) {
+      return { exitCode: 2, observation, reason: `重新生成 spec 失败：${error instanceof Error ? error.message : error}` };
+    }
+    const stem = path.basename(irPath).replace(/\.ir\.json$/, '');
+    const specPath = path.join(path.dirname(irPath), `${stem}.spec.ts`);
+    atomicWrite(irPath, JSON.stringify(updatedIr, null, 2) + '\n');
+    atomicWrite(specPath, specContent);
+    return { exitCode: 0, written: true, evidence: 'dom', delta, observation };
+  }
   const role = AppearedRoleSchema.safeParse(candidate.role);
   if (!role.success) {
     return {
@@ -223,5 +305,5 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
   const specPath = path.join(path.dirname(irPath), `${stem}.spec.ts`);
   atomicWrite(irPath, JSON.stringify(updatedIr, null, 2) + '\n');
   atomicWrite(specPath, specContent);
-  return { exitCode: 0, written: true, evidence: 'dom', delta };
+  return { exitCode: 0, written: true, evidence: 'dom', delta, observation };
 }

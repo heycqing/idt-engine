@@ -439,15 +439,35 @@ program
           console.log('已丢弃原有 routeGuard.readyRole / readyName（目标页已变化）');
         }
       } else if (result.written && result.evidence === 'dom' && result.delta) {
-        console.log(
-          `已写入 domDelta：(${result.delta.appearedRole}, ${result.delta.appearedName})`,
-        );
+        console.log(`观测通道：${result.observation === 'dom' ? 'DOM 直取' : 'ARIA 回退'}`);
+        if ('appearedSelector' in result.delta) {
+          console.log(
+            `已写入 domDelta：[结构选择器] ${result.delta.appearedSelector}`
+              + `${result.delta.appearedText ? `，文本 ${result.delta.appearedText}` : ''}`,
+          );
+        } else {
+          console.log(
+            `已写入 domDelta：[语义定位] (${result.delta.appearedRole}, ${result.delta.appearedName})`,
+          );
+        }
       } else if (result.candidates) {
+        console.error(`观测通道：${result.observation === 'dom' ? 'DOM 直取' : 'ARIA 回退'}`);
         console.error('发现多个 DOM 增量候选，未修改文件。用 --pick <序号> 选一个：');
         for (const [index, candidate] of result.candidates.entries()) {
-          console.error(`  ${index + 1}  (${candidate.role}, ${candidate.name})`);
+          if ('selector' in candidate) {
+            console.error(
+              `  ${index + 1}  [结构选择器] ${candidate.selector}`
+                + `${candidate.text ? `，文本 ${candidate.text}` : ''}`,
+            );
+          } else {
+            console.error(`  ${index + 1}  [语义定位] (${candidate.role}, ${candidate.name})`);
+          }
         }
       } else if (result.reason) {
+        if (result.observation) {
+          const output = result.exitCode === 0 ? console.log : console.error;
+          output(`观测通道：${result.observation === 'dom' ? 'DOM 直取' : 'ARIA 回退'}`);
+        }
         const output = result.exitCode === 0 ? console.log : console.error;
         output(result.reason);
       }
