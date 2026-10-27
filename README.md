@@ -106,7 +106,9 @@ spec 漂移、IR 是否合 schema、未解决项、失效路由、缺失元素�
 
 `idt:probe <ir>` 用真实浏览器把 IR 重放到触发动作之前，对比动作前后的 aria 快照，
 把唯一新出现的具名元素固化为 `stage.invariants.domDelta`，并重新装配同名 spec。
-如果出现多个候选，它只列出候选而不猜；没有候选时也不会改文件。这一步解决静态分析
+证据不足时，`gen` 会写出 IR 但不产出 spec；接着对这份 IR 跑 `idt:probe` 补证据。
+如果出现多个候选，它只列出带序号的候选而不猜；确认后可重新运行
+`idt:probe <ir> --pick <序号>`，从这次重新探到的候选中选择一个写入。没有候选时也不会改文件。这一步解决静态分析
 无法知道「点击后才出现什么」的问题，应在开发者本机运行：概率性的观察结果写进 IR 后，
 CI 只执行固化后的确定性脚本，不运行 probe，因此仍符合「概率只留在编译期」。
 
@@ -138,7 +140,7 @@ IR 本身只存应用路由，不带 `#`。同一条 IR 在宿主从 hash 换成
 - 生成状态转移 IR 与 spec：`pnpm idt "<intent>"`（需要项目根目录的 `.env.idt.local` 填好 `OPENAI_API_KEY`；`gen` 会同时写出 IR 与 spec，带 `--yes` 才会执行这条 spec）
 - 从 IR 写出 spec：`pnpm idt:emit <ir路径>`（不需要安装 Playwright）
 - 自愈失败 spec：`pnpm idt:heal <spec路径>`
-- 探测动作后的 DOM 增量：`pnpm idt:probe <ir路径> [--project <name>]`
+- 探测动作后的 DOM 增量：`pnpm idt:probe <ir路径> [--project <name>] [--pick <序号>]`
 - 同步拓扑与语义索引：`pnpm idt:sync`（多项目宿主默认同步全部，`--project <name>` 只同步一个）
 - 按路由批量生成：`pnpm idt:batch [--project <name>] [--limit <n>] [--filter <子串>] [--exclude <子串,子串>]`
 - 离线校验生成用例：`pnpm idt:verify [--project <name>] [--strict]`（不指定项目时校验全部项目）

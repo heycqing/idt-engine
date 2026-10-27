@@ -11,7 +11,8 @@ import {
   StateTransitionIRSchema,
   type StateTransitionIR,
 } from './ir-schema.js';
-import { validateIr } from './validate-ir.js';
+import { validateIr, ValidationError } from './validate-ir.js';
+import { findEvidenceGaps } from './action-evidence.js';
 import type { ModelClient } from './openai-client.js';
 
 export { type ModelClient } from './openai-client.js';
@@ -248,6 +249,7 @@ export async function compileIntent(
     routePath,
     proseCase,
     mode: 'gen',
+    checkEvidence: false,
   });
 
   // 7. Write tests/e2e/generated/<flowId>.ir.json (.tmp then rename)
@@ -255,6 +257,22 @@ export async function compileIntent(
   const tmpIrFile = path.join(genDir, `${flowId}.ir.json.tmp`);
   fs.writeFileSync(tmpIrFile, JSON.stringify(ir, null, 2), 'utf8');
   fs.renameSync(tmpIrFile, targetIrFile);
+
+  // 8. Evidence gaps keep the IR available for probe, but block spec emission.
+  const evidenceGaps = findEvidenceGaps(ir);
+  if (evidenceGaps.length > 0) {
+    const relativeIrPath = path.relative(projectRoot, targetIrFile).replace(/\\/g, '/');
+    const stages = evidenceGaps
+      .map((gap) => `stage ${gap.stageIndex}「${gap.stageName}」`)
+      .join('、');
+    throw new ValidationError(
+      `已写出 IR：${relativeIrPath}\n`
+        + `${stages}有需要硬证据的动作，但一条证据都没有，因此没有产出 spec。\n`
+        + `跑 pnpm idt:probe ${relativeIrPath} 探一次动作后的 DOM 增量；`
+        + `多候选时用 --pick <序号> 选一个。`,
+      2,
+    );
+  }
 
   return ir;
 }

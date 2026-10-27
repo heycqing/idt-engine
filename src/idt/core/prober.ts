@@ -25,6 +25,7 @@ export interface ProbeOptions {
   projectRoot: string;
   irPath: string;
   baseUrl?: string;
+  pick?: number;
   replay?: (
     ir: StateTransitionIR,
     target: ProbeTarget,
@@ -81,6 +82,10 @@ function findProbeTarget(ir: StateTransitionIR): ProbeTarget | null {
 }
 
 export async function probe(options: ProbeOptions): Promise<ProbeResult> {
+  if (options.pick !== undefined && (!Number.isInteger(options.pick) || options.pick < 1)) {
+    return { exitCode: 2, reason: '--pick 序号必须是从 1 开始的整数' };
+  }
+
   const irPath = path.isAbsolute(options.irPath)
     ? options.irPath
     : path.resolve(options.projectRoot, options.irPath);
@@ -132,11 +137,17 @@ export async function probe(options: ProbeOptions): Promise<ProbeResult> {
   if (candidates.length === 0) {
     return { exitCode: 2, reason: '这个动作没有可观察的 DOM 效果' };
   }
-  if (candidates.length > 1) {
+  if (options.pick === undefined && candidates.length > 1) {
     return { exitCode: 2, candidates };
   }
+  if (options.pick !== undefined && options.pick > candidates.length) {
+    return {
+      exitCode: 2,
+      reason: `只探到 ${candidates.length} 个 DOM 增量候选，不能选择第 ${options.pick} 个`,
+    };
+  }
 
-  const candidate = candidates[0];
+  const candidate = candidates[(options.pick ?? 1) - 1];
   const role = AppearedRoleSchema.safeParse(candidate.role);
   if (!role.success) {
     return {

@@ -1,12 +1,14 @@
 import type { StateTransitionIR, TargetRole } from './ir-schema.js';
 import type { PageElement, ProjectTopology } from '../schemas/topology.schema.js';
 import { exactRoute } from './route-pattern.js';
+import { ACTIONS_NEEDING_EVIDENCE, findEvidenceGaps } from './action-evidence.js';
 
 export type FindingLevel = 'error' | 'warning';
 
 export type FindingCode =
   | 'spec-drift'
   | 'missing-spec'
+  | 'missing-evidence'
   | 'orphan-spec'
   | 'invalid-ir'
   | 'unresolved'
@@ -15,9 +17,6 @@ export type FindingCode =
   | 'missing-element'
   | 'tautological-guard'
   | 'weak-assertion';
-
-/** 需要硬证据的动作。FILL 没有副作用，不在此列。 */
-const ACTIONS_NEEDING_EVIDENCE = new Set(['CLICK', 'CHECK', 'SELECT']);
 
 export interface VerifyFinding {
   level: FindingLevel;
@@ -93,12 +92,19 @@ export function verifyCases(
     const { flowId, ir, specContent } = item;
 
     if (specContent === null) {
+      const evidenceGaps = findEvidenceGaps(ir);
+      const missingCode = evidenceGaps.length > 0
+        ? 'missing-evidence'
+        : 'missing-spec';
+      const missingMessage = evidenceGaps.length > 0
+        ? `用例 ${flowId} 缺少动作硬证据，因此没有同名 .spec.ts；请运行 pnpm idt:probe tests/e2e/generated/${flowId}.ir.json 补充 domDelta。`
+        : `用例 ${flowId} 缺少同名 .spec.ts；请从 IR 重新生成测试代码。`;
       findings.push(
         finding(
           flowId,
           'error',
-          'missing-spec',
-          `用例 ${flowId} 缺少同名 .spec.ts；请从 IR 重新生成测试代码。`,
+          missingCode,
+          missingMessage,
         ),
       );
     } else {

@@ -112,6 +112,23 @@ describe('validateIr', () => {
     }
   });
 
+  it('skips only the evidence gate when checkEvidence is false', () => {
+    const tmp = createTempDir();
+    try {
+      const ir = getBaseValidIr();
+      ir.stages[0].invariants = { network: [] };
+
+      assert.doesNotThrow(() => validateIr(ir, {
+        projectRoot: tmp,
+        routePath: ['/cart'],
+        mode: 'gen',
+        checkEvidence: false,
+      }));
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
   it('allows domDelta as the only hard evidence for a CLICK stage', () => {
     const tmp = createTempDir();
     try {

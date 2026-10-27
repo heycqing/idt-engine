@@ -419,7 +419,8 @@ program
   .command('probe <ir>')
   .description('Capture post-action DOM delta and persist unambiguous evidence')
   .option('--project <name>', 'IDT project the IR belongs to')
-  .action(async (ir: string, options: { project?: string }) => {
+  .option('--pick <n>', 'Pick a DOM delta candidate by its 1-based index', (value) => Number(value))
+  .action(async (ir: string, options: { project?: string; pick?: number }) => {
     try {
       const { projects } = workspace();
       const project = pick(projects, options.project);
@@ -427,6 +428,7 @@ program
         projectRoot: project.root,
         irPath: path.resolve(process.cwd(), ir),
         baseUrl: projectBaseUrl(project),
+        pick: options.pick,
       });
 
       if (result.written && result.delta) {
@@ -434,9 +436,9 @@ program
           `已写入 domDelta：(${result.delta.appearedRole}, ${result.delta.appearedName})`,
         );
       } else if (result.candidates) {
-        console.error('发现多个 DOM 增量候选，未修改文件：');
-        for (const candidate of result.candidates) {
-          console.error(`  (${candidate.role}, ${candidate.name})`);
+        console.error('发现多个 DOM 增量候选，未修改文件。用 --pick <序号> 选一个：');
+        for (const [index, candidate] of result.candidates.entries()) {
+          console.error(`  ${index + 1}  (${candidate.role}, ${candidate.name})`);
         }
       } else if (result.reason) {
         const output = result.exitCode === 0 ? console.log : console.error;

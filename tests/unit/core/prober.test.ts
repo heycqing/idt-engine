@@ -131,6 +131,178 @@ describe('probe', () => {
     }
   });
 
+  it('writes the second candidate when pick is 2', async () => {
+    const item = fixture();
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        pick: 2,
+        replay: async () => ({
+          before: '',
+          after: '- text "动态结果"\n- button "确认"',
+        }),
+      });
+
+      assert.equal(result.exitCode, 0);
+      assert.deepEqual(result.delta, {
+        appearedRole: 'button',
+        appearedName: '确认',
+      });
+      const written = JSON.parse(fs.readFileSync(item.irPath, 'utf8'));
+      assert.deepEqual(written.stages[0].invariants.domDelta, result.delta);
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
+  it('writes the first candidate when pick is 1', async () => {
+    const item = fixture();
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        pick: 1,
+        replay: async () => ({
+          before: '',
+          after: '- dialog "先出现"\n- button "后出现"',
+        }),
+      });
+
+      assert.equal(result.exitCode, 0);
+      assert.deepEqual(result.delta, {
+        appearedRole: 'dialog',
+        appearedName: '先出现',
+      });
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
+  it('pick 1 with one candidate matches the result without pick', async () => {
+    const pickedItem = fixture();
+    const defaultItem = fixture();
+    const replay = async () => ({ before: '', after: '- dialog "完成"' });
+    try {
+      const picked = await probe({
+        projectRoot: pickedItem.root,
+        irPath: pickedItem.irPath,
+        pick: 1,
+        replay,
+      });
+      const defaultResult = await probe({
+        projectRoot: defaultItem.root,
+        irPath: defaultItem.irPath,
+        replay,
+      });
+
+      assert.equal(picked.exitCode, 0);
+      assert.deepEqual(picked.delta, defaultResult.delta);
+      assert.equal(
+        fs.readFileSync(pickedItem.irPath, 'utf8'),
+        fs.readFileSync(defaultItem.irPath, 'utf8'),
+      );
+      assert.equal(
+        fs.readFileSync(pickedItem.specPath, 'utf8'),
+        fs.readFileSync(defaultItem.specPath, 'utf8'),
+      );
+    } finally {
+      fs.rmSync(pickedItem.root, { recursive: true, force: true });
+      fs.rmSync(defaultItem.root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a pick beyond the candidate count without changing files', async () => {
+    const item = fixture();
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        pick: 3,
+        replay: async () => ({
+          before: '',
+          after: '- dialog "确认"\n- button "关闭"',
+        }),
+      });
+
+      assert.equal(result.exitCode, 2);
+      assert.match(result.reason ?? '', /2/);
+      assert.match(result.reason ?? '', /3/);
+      assert.equal(fs.readFileSync(item.irPath, 'utf8'), item.content);
+      assert.equal(fs.existsSync(item.specPath), false);
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
+  for (const invalidPick of [0, -1, 1.5]) {
+    it(`rejects invalid pick ${invalidPick} before replay`, async () => {
+      const item = fixture();
+      let replayCalls = 0;
+      try {
+        const result = await probe({
+          projectRoot: item.root,
+          irPath: item.irPath,
+          pick: invalidPick,
+          replay: async () => {
+            replayCalls += 1;
+            throw new Error('must not replay');
+          },
+        });
+
+        assert.equal(result.exitCode, 2);
+        assert.match(result.reason ?? '', /从 1 开始/);
+        assert.equal(replayCalls, 0);
+        assert.equal(fs.readFileSync(item.irPath, 'utf8'), item.content);
+        assert.equal(fs.existsSync(item.specPath), false);
+      } finally {
+        fs.rmSync(item.root, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it('pick 1 reports no observable DOM effect without changing files', async () => {
+    const item = fixture();
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        pick: 1,
+        replay: async () => ({ before: '- button "提交"', after: '- button "提交"' }),
+      });
+
+      assert.equal(result.exitCode, 2);
+      assert.match(result.reason ?? '', /没有可观察/);
+      assert.equal(fs.readFileSync(item.irPath, 'utf8'), item.content);
+      assert.equal(fs.existsSync(item.specPath), false);
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects an unsupported picked role with the existing readable reason', async () => {
+    const item = fixture();
+    try {
+      const result = await probe({
+        projectRoot: item.root,
+        irPath: item.irPath,
+        pick: 2,
+        replay: async () => ({
+          before: '',
+          after: '- button "确认"\n- banner "顶部"',
+        }),
+      });
+
+      assert.equal(result.exitCode, 2);
+      assert.match(result.reason ?? '', /banner/);
+      assert.doesNotMatch(result.reason ?? '', /zod|ZodError|invalid_/i);
+      assert.equal(fs.readFileSync(item.irPath, 'utf8'), item.content);
+      assert.equal(fs.existsSync(item.specPath), false);
+    } finally {
+      fs.rmSync(item.root, { recursive: true, force: true });
+    }
+  });
+
   it('reports no observable DOM effect without changing files', async () => {
     const item = fixture();
     try {

@@ -7,7 +7,7 @@ import {
 } from './ir-schema.js';
 import { validateIr } from './validate-ir.js';
 import { findTriggerActionIndex } from './action-order.js';
-import { exactRoute } from './route-pattern.js';
+import { findEvidenceGaps } from './action-evidence.js';
 import {
   DEFAULT_ROUTER_URL_OPTIONS,
   readRouterOptions,
@@ -106,28 +106,12 @@ export function emitSpec(
   }
 
   // 5. Interactive stages require network, real navigation, or a DOM delta.
-  for (const stage of validIr.stages) {
-    const hasInteractive = stage.actions.some(
-      (a) =>
-        a.actionType === 'CLICK' ||
-        a.actionType === 'CHECK' ||
-        a.actionType === 'SELECT'
+  const evidenceGap = findEvidenceGaps(validIr)[0];
+  if (evidenceGap) {
+    throw new EmitterError(
+      `Stage "${evidenceGap.stageName}" contains CLICK/CHECK/SELECT action but has no network invariant, routeGuard navigating to a different route, or domDelta`,
+      2
     );
-    if (hasInteractive) {
-      const hasNetwork =
-        stage.invariants.network && stage.invariants.network.length > 0;
-      const guardPattern = stage.invariants.routeGuard?.targetUrlPattern;
-      const hasNavigatingRouteGuard =
-        guardPattern !== undefined &&
-        exactRoute(guardPattern) !== exactRoute(stage.routePattern);
-      const hasDomDelta = Boolean(stage.invariants.domDelta);
-      if (!hasNetwork && !hasNavigatingRouteGuard && !hasDomDelta) {
-        throw new EmitterError(
-          `Stage "${stage.stageName}" contains CLICK/CHECK/SELECT action but has no network invariant, routeGuard navigating to a different route, or domDelta`,
-          2
-        );
-      }
-    }
   }
 
   // 6. readyRole and readyName both present or both absent

@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { exactRoute } from './route-pattern.js';
 import {
   StateTransitionIRSchema,
   type StateTransitionIR,
 } from './ir-schema.js';
+import { findEvidenceGaps } from './action-evidence.js';
 
 export interface ValidateIrOptions {
   projectRoot: string;
@@ -12,6 +12,8 @@ export interface ValidateIrOptions {
   proseCase?: string;
   mode: 'gen' | 'emit';
   fileStem?: string;
+  /** 默认 true。compileIntent 传 false：先把 IR 落盘，证据的事单独报。 */
+  checkEvidence?: boolean;
 }
 
 export class ValidationError extends Error {
@@ -120,27 +122,13 @@ export function validateIr(ir: StateTransitionIR, options: ValidateIrOptions): v
   }
 
   // 6. Interactive stages require network, real navigation, or a DOM delta.
-  for (const stage of ir.stages) {
-    const hasInteractive = stage.actions.some(
-      (a) =>
-        a.actionType === 'CLICK' ||
-        a.actionType === 'CHECK' ||
-        a.actionType === 'SELECT'
-    );
-    if (hasInteractive) {
-      const hasNetwork =
-        stage.invariants.network && stage.invariants.network.length > 0;
-      const guardPattern = stage.invariants.routeGuard?.targetUrlPattern;
-      const hasNavigatingRouteGuard =
-        guardPattern !== undefined &&
-        exactRoute(guardPattern) !== exactRoute(stage.routePattern);
-      const hasDomDelta = Boolean(stage.invariants.domDelta);
-      if (!hasNetwork && !hasNavigatingRouteGuard && !hasDomDelta) {
-        throw new ValidationError(
-          `Stage "${stage.stageName}" contains CLICK/CHECK/SELECT action but has no network invariant, routeGuard navigating to a different route, or domDelta`,
-          2
-        );
-      }
+  if (options.checkEvidence !== false) {
+    const gap = findEvidenceGaps(ir)[0];
+    if (gap) {
+      throw new ValidationError(
+        `Stage "${gap.stageName}" contains CLICK/CHECK/SELECT action but has no network invariant, routeGuard navigating to a different route, or domDelta`,
+        2
+      );
     }
   }
 

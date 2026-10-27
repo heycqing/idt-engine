@@ -67,11 +67,30 @@ describe('verify generated cases', () => {
     assert.equal(findings[0].level, 'error');
   });
 
-  it('reports missing-spec when the paired spec is absent', () => {
+  it('reports missing-evidence with probe guidance when the paired spec is absent', () => {
     const findings = verify(makeIr(), makeTopology(), null);
     assert.equal(findings.length, 1);
-    assert.equal(findings[0].code, 'missing-spec');
+    assert.equal(findings[0].code, 'missing-evidence');
     assert.equal(findings[0].level, 'error');
+    assert.match(findings[0].message, /probe/);
+    assert.equal(findings.some((finding) => finding.code === 'missing-spec'), false);
+  });
+
+  it('still reports missing-spec when the IR already has hard evidence', () => {
+    const ir = makeIr({
+      stages: [{
+        ...makeIr().stages[0],
+        invariants: {
+          network: [{
+            method: 'POST', urlPattern: '/api/submit', expectedStatus: 200, responseType: 'json',
+          }],
+        },
+      }],
+    });
+    const findings = verify(ir, makeTopology(), null);
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].code, 'missing-spec');
+    assert.equal(findings.some((finding) => finding.code === 'missing-evidence'), false);
   });
 
   it('reports every unresolved item in the message', () => {

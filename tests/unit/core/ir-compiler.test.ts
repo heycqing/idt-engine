@@ -476,6 +476,49 @@ describe('ir-compiler', () => {
         compileIntent({ projectRoot: tmp, intent: '购物车去结算并支付成功', model }),
         /IR compilation failed/,
       );
+      const generatedDir = path.join(tmp, 'tests/e2e/generated');
+      assert.equal(fs.existsSync(generatedDir), false, 'structurally invalid IR must not be written');
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
+  it('writes the IR before reporting a missing evidence gap', async () => {
+    const tmp = createTempDir();
+    try {
+      setupCartFixture(tmp);
+      const intent = '购物车点击查看详情';
+      const flowId = flowIdFromIntent(intent);
+      const modelIr = createValidModelIr();
+      modelIr.initialRoute = '/cart';
+      modelIr.stages = [{
+        stageIndex: 0,
+        stageName: '购物车点击查看详情',
+        routePattern: '/cart',
+        actions: [{
+          actionType: 'CLICK', targetRole: 'button', targetName: '去结算',
+          timeoutMs: 5000, triggersRequest: false,
+        }],
+        invariants: { network: [] },
+      }];
+      const model: ModelClient = {
+        async complete() { return JSON.stringify(modelIr); },
+      };
+
+      await assert.rejects(
+        compileIntent({ projectRoot: tmp, intent, route: '/cart', model }),
+        (error: any) => {
+          assert.equal(error.exitCode, 2);
+          assert.match(error.message, new RegExp(`${flowId}\\.ir\\.json`));
+          assert.match(error.message, /购物车点击查看详情/);
+          assert.match(error.message, /idt:probe/);
+          return true;
+        },
+      );
+
+      const generatedDir = path.join(tmp, 'tests/e2e/generated');
+      assert.equal(fs.existsSync(path.join(generatedDir, `${flowId}.ir.json`)), true);
+      assert.equal(fs.existsSync(path.join(generatedDir, `${flowId}.spec.ts`)), false);
     } finally {
       removeTempDir(tmp);
     }
