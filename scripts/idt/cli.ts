@@ -23,6 +23,7 @@ import { generateFlow } from '../../src/idt/core/generate.js';
 import { OpenAiClient } from '../../src/idt/core/openai-client.js';
 import { emitIrFile, emitSpec } from '../../src/idt/core/emitter.js';
 import { heal } from '../../src/idt/core/healer.js';
+import { probe } from '../../src/idt/core/prober.js';
 import { playwrightCliEntry } from '../../src/idt/core/runner.js';
 import { selectBatchRoutes } from '../../src/idt/core/batch-routes.js';
 import { readRouterOptions } from '../../src/idt/core/route-url.js';
@@ -407,6 +408,41 @@ program
         console.error(`Heal failed: ${result.reason ?? `exit code ${result.exitCode}`}`);
         process.exit(result.exitCode);
       }
+    } catch (err: any) {
+      const exitCode = typeof err?.exitCode === 'number' ? err.exitCode : 2;
+      console.error(err?.message ?? String(err));
+      process.exit(exitCode);
+    }
+  });
+
+program
+  .command('probe <ir>')
+  .description('Capture post-action DOM delta and persist unambiguous evidence')
+  .option('--project <name>', 'IDT project the IR belongs to')
+  .action(async (ir: string, options: { project?: string }) => {
+    try {
+      const { projects } = workspace();
+      const project = pick(projects, options.project);
+      const result = await probe({
+        projectRoot: project.root,
+        irPath: path.resolve(process.cwd(), ir),
+        baseUrl: projectBaseUrl(project),
+      });
+
+      if (result.written && result.delta) {
+        console.log(
+          `已写入 domDelta：(${result.delta.appearedRole}, ${result.delta.appearedName})`,
+        );
+      } else if (result.candidates) {
+        console.error('发现多个 DOM 增量候选，未修改文件：');
+        for (const candidate of result.candidates) {
+          console.error(`  (${candidate.role}, ${candidate.name})`);
+        }
+      } else if (result.reason) {
+        const output = result.exitCode === 0 ? console.log : console.error;
+        output(result.reason);
+      }
+      process.exit(result.exitCode);
     } catch (err: any) {
       const exitCode = typeof err?.exitCode === 'number' ? err.exitCode : 2;
       console.error(err?.message ?? String(err));

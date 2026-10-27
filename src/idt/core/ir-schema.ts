@@ -15,6 +15,31 @@ export const TargetRoleSchema = z.enum([
   'tab',
 ]);
 
+/**
+ * 动作之后可能新出现的元素的 role。
+ *
+ * 比 TargetRoleSchema 宽：弹窗、吐司这类东西点不了、也不会进元素清单，
+ * 但它们恰恰是「动作生效了」最直接的证据。两个枚举必须分开——把 dialog
+ * 混进 TargetRoleSchema 会让模型可以产出 targetRole: "dialog" 这种点不了
+ * 的东西，而提示词和提取器都只认 9 个 role。
+ */
+export const AppearedRoleSchema = z.enum([
+  'text',
+  'button',
+  'link',
+  'textbox',
+  'checkbox',
+  'radio',
+  'combobox',
+  'heading',
+  'tab',
+  'dialog',
+  'alertdialog',
+  'alert',
+  'status',
+  'tooltip',
+]);
+
 export const ActionSchema = z.object({
   actionType: z.enum(['CLICK', 'FILL', 'SELECT', 'CHECK']),
   targetRole: TargetRoleSchema,
@@ -40,6 +65,11 @@ export const RouteGuardSchema = z.object({
   readyName: z.string().min(1).optional(),
 });
 
+export const DomDeltaSchema = z.object({
+  appearedRole: AppearedRoleSchema,
+  appearedName: z.string().min(1),
+});
+
 export const StageSchema = z.object({
   stageIndex: z.number().int().nonnegative(),
   stageName: z.string().min(1),
@@ -48,6 +78,7 @@ export const StageSchema = z.object({
   invariants: z.object({
     network: z.array(NetworkInvariantSchema).default([]),
     routeGuard: RouteGuardSchema.optional(),
+    domDelta: DomDeltaSchema.optional(),
   }),
 });
 
@@ -66,8 +97,10 @@ export const StateTransitionIRSchema = z.object({
 });
 
 export type TargetRole = z.infer<typeof TargetRoleSchema>;
+export type AppearedRole = z.infer<typeof AppearedRoleSchema>;
 export type Action = z.infer<typeof ActionSchema>;
 export type NetworkInvariant = z.infer<typeof NetworkInvariantSchema>;
 export type RouteGuard = z.infer<typeof RouteGuardSchema>;
+export type DomDelta = z.infer<typeof DomDeltaSchema>;
 export type Stage = z.infer<typeof StageSchema>;
 export type StateTransitionIR = z.infer<typeof StateTransitionIRSchema>;

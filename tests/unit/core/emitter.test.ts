@@ -20,6 +20,53 @@ function removeTempDir(dir: string): void {
 }
 
 describe('emitter test suite', () => {
+  it('renders domDelta after the trigger action and before the route guard', () => {
+    const ir: any = {
+      flowId: 'flow_1234567890', intent: '提交后弹窗', oracle: 'regression-lock',
+      description: '提交后显示成功弹窗', initialRoute: '/form', setup: { notes: [] },
+      unresolved: [],
+      stages: [{
+        stageIndex: 0, stageName: '提交', routePattern: '/form',
+        actions: [{
+          actionType: 'CLICK', targetRole: 'button', targetName: '提交',
+          timeoutMs: 2345, triggersRequest: true,
+        }],
+        invariants: {
+          network: [], routeGuard: { targetUrlPattern: '/done' },
+          domDelta: { appearedRole: 'dialog', appearedName: '提交成功' },
+        },
+      }],
+    };
+
+    const source = emitSpec(ir);
+    const actionIndex = source.indexOf('.click(');
+    const deltaIndex = source.indexOf(
+      'expect(page.getByRole("dialog", { name: "提交成功" })).toBeVisible({ timeout: 2345 })',
+    );
+    const guardIndex = source.indexOf('page.waitForURL');
+    assert.ok(actionIndex >= 0 && actionIndex < deltaIndex);
+    assert.ok(deltaIndex < guardIndex);
+  });
+
+  it('uses exact getByText for a text domDelta', () => {
+    const ir: any = {
+      flowId: 'flow_1234567890', intent: '出现提示', oracle: 'regression-lock',
+      description: '点击后出现提示', initialRoute: '/form', setup: { notes: [] },
+      unresolved: [],
+      stages: [{
+        stageIndex: 0, stageName: '提交', routePattern: '/form',
+        actions: [{ actionType: 'CLICK', targetRole: 'button', targetName: '提交' }],
+        invariants: {
+          network: [], domDelta: { appearedRole: 'text', appearedName: '操作完成' },
+        },
+      }],
+    };
+
+    assert.match(
+      emitSpec(ir),
+      /expect\(page\.getByText\("操作完成", \{ exact: true \}\)\)\.toBeVisible/,
+    );
+  });
   const projectRoot = process.cwd();
   const fixturesDir = path.resolve(projectRoot, 'tests/unit/core/fixtures');
 

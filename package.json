@@ -6,6 +6,7 @@
     "idt": "tsx scripts/idt/cli.ts gen",
     "idt:emit": "tsx scripts/idt/cli.ts emit",
     "idt:heal": "tsx scripts/idt/cli.ts heal",
+    "idt:probe": "tsx scripts/idt/cli.ts probe",
     "idt:sync": "tsx scripts/idt/cli.ts sync",
     "test:idt": "tsx scripts/idt/run-unit-tests.ts",
     "idt:link": "node scripts/idt/link-host.mjs",

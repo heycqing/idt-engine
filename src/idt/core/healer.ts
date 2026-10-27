@@ -7,6 +7,7 @@ import { replayUntil, launchChromiumReplay } from './replay.js';
 import { readRouterOptions } from './route-url.js';
 import { parseAriaSnapshot } from './aria-snapshot.js';
 import { chooseReplacement } from './similarity.js';
+import { findTriggerActionIndex } from './action-order.js';
 
 export function firstFailure(
   report: unknown,
@@ -136,20 +137,7 @@ export function locateHealTarget(
   for (let stageIdx = 0; stageIdx < ir.stages.length; stageIdx++) {
     const stage = ir.stages[stageIdx];
     const actions = stage.actions;
-    let triggerIndex = -1;
-    if (actions.length > 0) {
-      let lastTriggersRequestIndex = -1;
-      for (let i = 0; i < actions.length; i++) {
-        if (actions[i].triggersRequest) {
-          lastTriggersRequestIndex = i;
-        }
-      }
-      if (lastTriggersRequestIndex !== -1) {
-        triggerIndex = lastTriggersRequestIndex;
-      } else {
-        triggerIndex = actions.length - 1;
-      }
-    }
+    const triggerIndex = findTriggerActionIndex(actions);
 
     // Prior non-trigger actions
     for (let i = 0; i < actions.length; i++) {

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { exactRoute } from './route-pattern.js';
 import {
   StateTransitionIRSchema,
   type StateTransitionIR,
@@ -118,7 +119,7 @@ export function validateIr(ir: StateTransitionIR, options: ValidateIrOptions): v
     }
   }
 
-  // 6. Stages containing CLICK, CHECK, or SELECT must have non-empty network or routeGuard
+  // 6. Interactive stages require network, real navigation, or a DOM delta.
   for (const stage of ir.stages) {
     const hasInteractive = stage.actions.some(
       (a) =>
@@ -129,10 +130,14 @@ export function validateIr(ir: StateTransitionIR, options: ValidateIrOptions): v
     if (hasInteractive) {
       const hasNetwork =
         stage.invariants.network && stage.invariants.network.length > 0;
-      const hasRouteGuard = Boolean(stage.invariants.routeGuard);
-      if (!hasNetwork && !hasRouteGuard) {
+      const guardPattern = stage.invariants.routeGuard?.targetUrlPattern;
+      const hasNavigatingRouteGuard =
+        guardPattern !== undefined &&
+        exactRoute(guardPattern) !== exactRoute(stage.routePattern);
+      const hasDomDelta = Boolean(stage.invariants.domDelta);
+      if (!hasNetwork && !hasNavigatingRouteGuard && !hasDomDelta) {
         throw new ValidationError(
-          `Stage "${stage.stageName}" contains CLICK/CHECK/SELECT action but has neither network invariant nor routeGuard`,
+          `Stage "${stage.stageName}" contains CLICK/CHECK/SELECT action but has no network invariant, routeGuard navigating to a different route, or domDelta`,
           2
         );
       }

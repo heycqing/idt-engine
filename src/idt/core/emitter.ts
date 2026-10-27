@@ -6,6 +6,8 @@ import {
   type StateTransitionIR,
 } from './ir-schema.js';
 import { validateIr } from './validate-ir.js';
+import { findTriggerActionIndex } from './action-order.js';
+import { exactRoute } from './route-pattern.js';
 import {
   DEFAULT_ROUTER_URL_OPTIONS,
   readRouterOptions,
@@ -103,7 +105,7 @@ export function emitSpec(
     }
   }
 
-  // 5. Stage containing CLICK, CHECK, or SELECT must have non-empty network or routeGuard
+  // 5. Interactive stages require network, real navigation, or a DOM delta.
   for (const stage of validIr.stages) {
     const hasInteractive = stage.actions.some(
       (a) =>
@@ -114,10 +116,14 @@ export function emitSpec(
     if (hasInteractive) {
       const hasNetwork =
         stage.invariants.network && stage.invariants.network.length > 0;
-      const hasRouteGuard = Boolean(stage.invariants.routeGuard);
-      if (!hasNetwork && !hasRouteGuard) {
+      const guardPattern = stage.invariants.routeGuard?.targetUrlPattern;
+      const hasNavigatingRouteGuard =
+        guardPattern !== undefined &&
+        exactRoute(guardPattern) !== exactRoute(stage.routePattern);
+      const hasDomDelta = Boolean(stage.invariants.domDelta);
+      if (!hasNetwork && !hasNavigatingRouteGuard && !hasDomDelta) {
         throw new EmitterError(
-          `Stage "${stage.stageName}" contains CLICK/CHECK/SELECT action but has neither network invariant nor routeGuard`,
+          `Stage "${stage.stageName}" contains CLICK/CHECK/SELECT action but has no network invariant, routeGuard navigating to a different route, or domDelta`,
           2
         );
       }
@@ -207,20 +213,7 @@ export function emitSpec(
     const routeGuard = stage.invariants.routeGuard;
 
     // Trigger action determination
-    let triggerIndex = -1;
-    if (actions.length > 0) {
-      let lastTriggersRequestIndex = -1;
-      for (let i = 0; i < actions.length; i++) {
-        if (actions[i].triggersRequest) {
-          lastTriggersRequestIndex = i;
-        }
-      }
-      if (lastTriggersRequestIndex !== -1) {
-        triggerIndex = lastTriggersRequestIndex;
-      } else {
-        triggerIndex = actions.length - 1;
-      }
-    }
+    const triggerIndex = findTriggerActionIndex(actions);
 
     const triggerAction = triggerIndex >= 0 ? actions[triggerIndex] : null;
     const triggerTimeout = triggerAction ? triggerAction.timeoutMs : 5000;
@@ -298,6 +291,18 @@ export function emitSpec(
       if (triggerAction) {
         lines.push(`  await ${renderActionExpr(triggerAction)};`);
       }
+    }
+
+    const domDelta = stage.invariants.domDelta;
+    if (domDelta) {
+      const name = JSON.stringify(domDelta.appearedName);
+      const locator =
+        domDelta.appearedRole === 'text'
+          ? `page.getByText(${name}, { exact: true })`
+          : `page.getByRole(${JSON.stringify(domDelta.appearedRole)}, { name: ${name} })`;
+      lines.push(
+        `  await expect(${locator}).toBeVisible({ timeout: ${triggerTimeout} });`,
+      );
     }
 
     // Route guard

@@ -1,5 +1,6 @@
 import type { StateTransitionIR, TargetRole } from './ir-schema.js';
 import type { PageElement, ProjectTopology } from '../schemas/topology.schema.js';
+import { exactRoute } from './route-pattern.js';
 
 export type FindingLevel = 'error' | 'warning';
 
@@ -43,10 +44,6 @@ function finding(
   message: string,
 ): VerifyFinding {
   return { level, code, flowId, message };
-}
-
-function exactRoute(pattern: string): string {
-  return pattern.replace(/^\^/, '').replace(/\$$/, '');
 }
 
 function elementsOf(node: unknown): PageElement[] {
@@ -187,6 +184,7 @@ export function verifyCases(
       if (
         needsEvidence &&
         stage.invariants.network.length === 0 &&
+        !stage.invariants.domDelta &&
         guardPattern !== undefined &&
         exactRoute(guardPattern) === route
       ) {
@@ -197,8 +195,8 @@ export function verifyCases(
             'tautological-guard',
             `用例 ${flowId} 的 stageIndex ${stage.stageIndex} 有需要硬证据的动作，`
               + `但唯一的证据是一条指向本页 ${route} 的路由守卫——动作本来就不跳页，`
-              + `这条断言恒为真，证明不了动作生效。请补一条网络契约，`
-              + `或把 readyRole/readyName 换成只在动作之后才出现的元素。`,
+              + `这条断言恒为真，证明不了动作生效。请补一条网络契约、`
+              + `真正跳到其他页面的 routeGuard，或动作后新出现的 domDelta。`,
           ),
         );
       }

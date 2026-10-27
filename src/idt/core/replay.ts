@@ -7,6 +7,7 @@ import {
 } from './route-url.js';
 import { chromium } from '@playwright/test';
 import type { StateTransitionIR } from './ir-schema.js';
+import { findTriggerActionIndex } from './action-order.js';
 
 export interface ReplayPage {
   goto(url: string): Promise<void>;
@@ -31,20 +32,7 @@ export async function replayUntil(
     const stage = ir.stages[stageIdx];
 
     // Determine triggerIndex according to emitter.ts rules
-    let triggerIndex = -1;
-    if (stage.actions.length > 0) {
-      let lastTriggersRequestIndex = -1;
-      for (let i = 0; i < stage.actions.length; i++) {
-        if (stage.actions[i].triggersRequest) {
-          lastTriggersRequestIndex = i;
-        }
-      }
-      if (lastTriggersRequestIndex !== -1) {
-        triggerIndex = lastTriggersRequestIndex;
-      } else {
-        triggerIndex = stage.actions.length - 1;
-      }
-    }
+    const triggerIndex = findTriggerActionIndex(stage.actions);
 
     // Build emission order: non-trigger actions first, then trigger action
     const emissionIndices: number[] = [];
@@ -115,12 +103,12 @@ export async function replayUntil(
   return await page.ariaSnapshot();
 }
 
-export async function launchChromiumReplay(
+export async function launchChromiumReplay<T>(
   projectRoot: string,
   storageStatePath: string | undefined,
-  run: (page: ReplayPage) => Promise<string>,
+  run: (page: ReplayPage) => Promise<T>,
   defaultBaseUrl: string | undefined = 'http://127.0.0.1:3000',
-): Promise<string> {
+): Promise<T> {
   const browser = await chromium.launch({ headless: true });
   try {
     const baseURL = process.env.IDT_BASE_URL || defaultBaseUrl || 'http://127.0.0.1:3000';

@@ -101,9 +101,59 @@ describe('validateIr', () => {
           }),
         (err: any) => {
           assert.equal(err.exitCode, 2);
+          assert.match(err.message, /network/i);
+          assert.match(err.message, /routeGuard/);
+          assert.match(err.message, /domDelta/);
           return true;
         }
       );
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
+  it('allows domDelta as the only hard evidence for a CLICK stage', () => {
+    const tmp = createTempDir();
+    try {
+      const ir = getBaseValidIr();
+      ir.stages[0].invariants = {
+        network: [],
+        domDelta: { appearedRole: 'dialog', appearedName: '提交成功' },
+      };
+      assert.doesNotThrow(() => validateIr(ir, {
+        projectRoot: tmp, routePath: ['/cart'], mode: 'gen',
+      }));
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
+  it('rejects a same-route routeGuard as the only CLICK evidence', () => {
+    const tmp = createTempDir();
+    try {
+      const ir = getBaseValidIr();
+      ir.stages[0].invariants = {
+        network: [], routeGuard: { targetUrlPattern: '^/cart$' },
+      };
+      assert.throws(
+        () => validateIr(ir, { projectRoot: tmp, routePath: ['/cart'], mode: 'gen' }),
+        (error: any) => error.exitCode === 2,
+      );
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
+  it('allows a routeGuard that navigates to a different route', () => {
+    const tmp = createTempDir();
+    try {
+      const ir = getBaseValidIr();
+      ir.stages[0].invariants = {
+        network: [], routeGuard: { targetUrlPattern: '^/complete$' },
+      };
+      assert.doesNotThrow(() => validateIr(ir, {
+        projectRoot: tmp, routePath: ['/cart'], mode: 'gen',
+      }));
     } finally {
       removeTempDir(tmp);
     }

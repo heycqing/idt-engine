@@ -35,7 +35,8 @@ describe('link-host', () => {
   it('builds a posix path from the host to the engine', () => {
     const rel = toPosixRelative('D:\\host', 'D:\\host\\idt-engine');
     assert.equal(rel.includes('\\'), false);
-    assert.match(desiredScripts('./idt-engine')['idt:sync'], /tsx \.\/idt-engine\/scripts\/idt\/cli\.ts sync/);
+  assert.match(desiredScripts('./idt-engine')['idt:sync'], /tsx \.\/idt-engine\/scripts\/idt\/cli\.ts sync/);
+  assert.match(desiredScripts('./idt-engine')['idt:probe'], /tsx \.\/idt-engine\/scripts\/idt\/cli\.ts probe/);
   });
 
   it('appends gitignore entries once, including the project key file', () => {

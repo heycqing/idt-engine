@@ -259,6 +259,17 @@ describe('verify generated cases', () => {
     assert.deepEqual(verify(ir).filter((f) => f.code === 'tautological-guard'), []);
   });
 
+  it('does not report a tautological guard when domDelta carries the evidence', () => {
+    const ir = clickIr({
+      invariants: {
+        network: [],
+        routeGuard: { targetUrlPattern: '/home' },
+        domDelta: { appearedRole: 'dialog', appearedName: '提交成功' },
+      },
+    } as any);
+    assert.deepEqual(verify(ir).filter((f) => f.code === 'tautological-guard'), []);
+  });
+
   it('accepts the guard when the action actually navigates elsewhere', () => {
     const ir = clickIr({
       invariants: { network: [], routeGuard: { targetUrlPattern: '/done$' } },
