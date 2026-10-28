@@ -95,9 +95,17 @@ export function playwrightCliEntry(projectRoot: string): string | null {
   }
 }
 
+/**
+ * 解析 playwright cli 的位置。做成参数是为了让单测能把这一步钉死：
+ * playwrightCliEntry 向上查找，命中什么取决于临时目录上方有没有游离的
+ * node_modules——那是机器状态，不该决定断言结果。
+ */
+export type PlaywrightCliResolver = (projectRoot: string) => string | null;
+
 export function playwrightTestInvocation(
   specPath: string,
   projectRoot?: string,
+  resolveCli: PlaywrightCliResolver = playwrightCliEntry,
 ): {
   command: string;
   args: string[];
@@ -109,7 +117,7 @@ export function playwrightTestInvocation(
     '--reporter=json',
   ];
 
-  const cli = projectRoot ? playwrightCliEntry(projectRoot) : null;
+  const cli = projectRoot ? resolveCli(projectRoot) : null;
   if (cli) {
     return { command: process.execPath, args: [cli, ...tail] };
   }
@@ -121,6 +129,7 @@ export async function runPlaywrightSpec(
   specPath: string,
   projectRoot: string,
   spawnImpl: SpawnFunction = runCommand,
+  resolveCli: PlaywrightCliResolver = playwrightCliEntry,
 ): Promise<{ exitCode: number; report: unknown | null }> {
   const idtDir = path.resolve(projectRoot, '.idt');
   if (!fs.existsSync(idtDir)) {
@@ -134,7 +143,7 @@ export async function runPlaywrightSpec(
     .split(path.sep)
     .join('/');
 
-  const invocation = playwrightTestInvocation(relativeSpec, projectRoot);
+  const invocation = playwrightTestInvocation(relativeSpec, projectRoot, resolveCli);
   // 必须是绝对路径：生成的 Playwright 配置就放在 .idt/ 下，相对路径会被按
   // 配置文件所在目录解析，报告会落进 .idt/.idt/ 而读不回来。
   const reportPath = path.resolve(projectRoot, '.idt', 'last-report.json');

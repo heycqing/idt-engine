@@ -11,6 +11,11 @@ import {
   RunnerError,
 } from '../../../src/idt/core/runner.js';
 
+// 临时目录上方可能存在游离的 node_modules/playwright（本机 %TEMP% 下就有一份），
+// 向上查找会命中它。要断言「解析不到」那条分支时必须把解析器钉成失败，
+// 否则断言结果取决于机器状态而不是代码。
+const resolvesToNothing = () => null;
+
 describe('runner', () => {
   it('runCommand captures stdout, stderr and exitCode accurately', async () => {
     // 命令是绝对路径时不再经过 Windows shell，参数原样传递，两个平台写法一致
@@ -90,12 +95,17 @@ describe('runner', () => {
       };
 
       const specPath = 'tests/e2e/generated/flow_1.spec.ts';
-      const res = await runPlaywrightSpec(specPath, tempDir, mockSpawn);
+      const res = await runPlaywrightSpec(
+        specPath,
+        tempDir,
+        mockSpawn,
+        resolvesToNothing,
+      );
 
       assert.equal(recordedCommand, 'pnpm');
       assert.deepEqual(
         recordedArgs,
-        playwrightTestInvocation(specPath).args,
+        playwrightTestInvocation(specPath, tempDir, resolvesToNothing).args,
       );
       assert.equal(recordedCwd, tempDir);
       assert.equal(
@@ -188,11 +198,29 @@ describe('runner', () => {
   it('falls back to pnpm exec when playwright cannot be resolved', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'idt-runner-none-'));
     try {
-      assert.equal(playwrightCliEntry(tempDir), null);
-      assert.equal(playwrightTestInvocation('a.spec.ts', tempDir).command, 'pnpm');
+      const invocation = playwrightTestInvocation(
+        'a.spec.ts',
+        tempDir,
+        resolvesToNothing,
+      );
+      assert.equal(invocation.command, 'pnpm');
+      assert.deepEqual(invocation.args.slice(0, 2), ['exec', 'playwright']);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it('playwrightCliEntry returns null when the walk reaches the filesystem root', () => {
+    // 真实的 null 分支：从盘符根往上走无处可去。不建临时目录，因为临时目录
+    // 的祖先里有什么不受测试控制。
+    const fsRoot = path.parse(path.resolve(os.tmpdir())).root;
+    const resolved = playwrightCliEntry(fsRoot);
+    assert.equal(
+      resolved,
+      fs.existsSync(path.join(fsRoot, 'node_modules', 'playwright', 'cli.js'))
+        ? path.join(fsRoot, 'node_modules', 'playwright', 'cli.js')
+        : null,
+    );
   });
   it('points the json report at an absolute path under the project root', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'idt-runner-report-'));
@@ -250,15 +278,20 @@ describe('runner', () => {
       let recordedArgs: string[] = [];
       const absoluteSpec = path.join(tempDir, 'tests', 'e2e', 'generated', 'a.spec.ts');
 
-      await runPlaywrightSpec(absoluteSpec, tempDir, async (_c, args, options) => {
-        recordedArgs = args;
-        fs.writeFileSync(
-          String(options?.env?.PLAYWRIGHT_JSON_OUTPUT_NAME),
-          '{}',
-          'utf8',
-        );
-        return { exitCode: 0, stdout: '', stderr: '' };
-      });
+      await runPlaywrightSpec(
+        absoluteSpec,
+        tempDir,
+        async (_c, args, options) => {
+          recordedArgs = args;
+          fs.writeFileSync(
+            String(options?.env?.PLAYWRIGHT_JSON_OUTPUT_NAME),
+            '{}',
+            'utf8',
+          );
+          return { exitCode: 0, stdout: '', stderr: '' };
+        },
+        resolvesToNothing,
+      );
 
       // Playwright 把位置参数当正则匹配文件路径，绝对 Windows 路径匹配不到任何文件
       assert.ok(
