@@ -28,10 +28,12 @@ import { playwrightCliEntry } from '../../src/idt/core/runner.js';
 import { selectBatchRoutes } from '../../src/idt/core/batch-routes.js';
 import { readRouterOptions } from '../../src/idt/core/route-url.js';
 import {
+  checkTopologyFreshness,
   verifyCases,
   type VerifyCase,
   type VerifyFinding,
 } from '../../src/idt/core/verify.js';
+import { computeInputsDigest } from '../../src/idt/extract/inputs-digest.js';
 import {
   StateTransitionIRSchema,
   type StateTransitionIR,
@@ -344,7 +346,19 @@ program
         }
         caseCount += cases.length;
 
+        const currentInputsDigest = computeInputsDigest(project.root, {
+          pageGlobs: project.pageGlobs,
+          routerGlobs: project.routerGlobs,
+          localeFiles: project.localeFiles,
+        });
+        const staleFinding = checkTopologyFreshness(
+          topology,
+          currentInputsDigest,
+          project.name,
+        );
+
         const findings: VerifyFinding[] = [
+          ...(staleFinding ? [staleFinding] : []),
           ...preFindings,
           ...verifyCases(topology, cases, {
             emit: (ir) => emitSpec(ir, readRouterOptions(project.root)),

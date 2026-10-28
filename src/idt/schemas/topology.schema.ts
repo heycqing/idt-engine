@@ -39,6 +39,8 @@ export const ProjectTopologySchema = z.object({
   version: z.literal('1.0.0'),
   generatedAt: z.string(),
   sourceDigest: z.string().length(64),
+  // 纯 I/O 的输入文件摘要。缺失按「无法判断是否陈旧」处理，旧产物不作废。
+  inputsDigest: z.string().length(64).optional(),
   // 多项目宿主里标明这份拓扑属于哪个项目。单项目和旧产物没有这个字段。
   project: z.string().min(1).optional(),
   // 路由模式。缺失按 history 读，旧产物不作废。

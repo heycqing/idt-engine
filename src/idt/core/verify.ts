@@ -16,7 +16,8 @@ export type FindingCode =
   | 'unmatched-route-pattern'
   | 'missing-element'
   | 'tautological-guard'
-  | 'weak-assertion';
+  | 'weak-assertion'
+  | 'stale-topology';
 
 export interface VerifyFinding {
   level: FindingLevel;
@@ -43,6 +44,37 @@ function finding(
   message: string,
 ): VerifyFinding {
   return { level, code, flowId, message };
+}
+
+/**
+ * 项目级：比对拓扑里的 inputsDigest 与当前源文件重算结果。
+ * 不一致或缺失时返回 finding；一致返回 null。不提前中断其余检查。
+ */
+export function checkTopologyFreshness(
+  topology: { inputsDigest?: string; generatedAt?: string },
+  currentInputsDigest: string,
+  flowId = '',
+): VerifyFinding | null {
+  if (topology.inputsDigest === undefined) {
+    return finding(
+      flowId,
+      'warning',
+      'stale-topology',
+      '这份拓扑没有 inputsDigest 字段，属于旧版本产物，无法判断是否已陈旧。'
+        + '建议重新执行 pnpm idt:sync。',
+    );
+  }
+  if (topology.inputsDigest === currentInputsDigest) {
+    return null;
+  }
+  const when = topology.generatedAt ?? '未知时间';
+  return finding(
+    flowId,
+    'error',
+    'stale-topology',
+    `拓扑生成于 ${when}，但输入源文件已变化（inputsDigest 不一致）。`
+      + '请先运行 pnpm idt:sync 再 verify，否则下面的结论都不可信。',
+  );
 }
 
 function elementsOf(node: unknown): PageElement[] {

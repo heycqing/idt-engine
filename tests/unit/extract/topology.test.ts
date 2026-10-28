@@ -110,6 +110,8 @@ describe('topology extraction and semantic index', () => {
       // sourceDigest must be identical
       assert.equal(topo1.sourceDigest, topo2.sourceDigest);
       assert.equal(topo1.sourceDigest.length, 64);
+      assert.equal(topo1.inputsDigest, topo2.inputsDigest);
+      assert.equal(topo1.inputsDigest?.length, 64);
 
       // Route keys exactly /cart, /checkout, /checkout/success
       const routeKeys = Object.keys(topo1.routes).sort();

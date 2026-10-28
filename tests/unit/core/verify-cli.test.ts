@@ -34,11 +34,23 @@ function runVerify(root: string, ...args: string[]) {
   );
 }
 
-function writeTopology(root: string): void {
+/** 与 withProject 的空源树 + pageGlobs 对应的 inputsDigest（无命中文件）。 */
+const EMPTY_INPUTS_DIGEST =
+  'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+function writeTopology(
+  root: string,
+  overrides: Record<string, unknown> = {},
+): void {
   fs.mkdirSync(path.join(root, '.idt'), { recursive: true });
   fs.writeFileSync(
     path.join(root, '.idt', 'topology.json'),
-    JSON.stringify({ routes: { '/home': { elements: [] } } }),
+    JSON.stringify({
+      routes: { '/home': { elements: [] } },
+      generatedAt: '2026-10-27T02:06:00.000Z',
+      inputsDigest: EMPTY_INPUTS_DIGEST,
+      ...overrides,
+    }),
     'utf8',
   );
 }
@@ -154,6 +166,42 @@ describe('idt verify CLI', () => {
 
       assert.equal(result.status, 1, result.stderr);
       assert.match(result.stdout, /读不出合法 JSON/);
+    });
+  });
+
+  it('reports stale-topology as an error when inputsDigest no longer matches', () => {
+    withProject((root) => {
+      writeTopology(root, { inputsDigest: 'a'.repeat(64) });
+      const generated = path.join(root, 'tests', 'e2e', 'generated');
+      fs.mkdirSync(generated, { recursive: true });
+
+      const result = runVerify(root);
+
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stdout, /idt:sync/);
+      assert.match(result.stdout, /2026-10-27T02:06:00\.000Z/);
+      assert.match(result.stdout, /1 个错误，0 个警告，共 0 条用例/);
+    });
+  });
+
+  it('warns when the topology omits inputsDigest', () => {
+    withProject((root) => {
+      writeTopology(root, { inputsDigest: undefined });
+      // JSON.stringify drops undefined keys — simulate a legacy topology.
+      fs.writeFileSync(
+        path.join(root, '.idt', 'topology.json'),
+        JSON.stringify({
+          routes: { '/home': { elements: [] } },
+          generatedAt: '2026-10-01T00:00:00.000Z',
+        }),
+        'utf8',
+      );
+
+      const result = runVerify(root);
+
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /旧版本|无法判断/);
+      assert.match(result.stdout, /0 个错误，1 个警告，共 0 条用例/);
     });
   });
 });

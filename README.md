@@ -96,8 +96,9 @@ apps/yuekai/.idt/...
 
 `idt:verify` 离线核对已经生成的 IR/spec 与当前拓扑和装配源码：检查配对文件、
 spec 漂移、IR 是否合 schema、未解决项、失效路由、缺失元素、同义反复的守卫，
-以及只有 URL 断言的弱用例。它不调用模型、不启动浏览器，也不访问网络；
-`--strict` 会把警告也视为失败。
+以及只有 URL 断言的弱用例。拓扑相对源文件已陈旧时会报 `stale-topology` 错误——
+开发期的惯用法是 `pnpm idt:sync && pnpm idt:verify`。它不调用模型、不启动浏览器，
+也不访问网络；`--strict` 会把警告也视为失败。
 
 其中 `tautological-guard` 值得单独说：需求文档原则 3 要求点击、勾选、选择必须
 绑到一条网络契约或一条路由守卫，但一条 `targetUrlPattern` 指向动作自己所在那页
@@ -143,7 +144,7 @@ IR 本身只存应用路由，不带 `#`。同一条 IR 在宿主从 hash 换成
 - 探测动作后的 DOM 增量：`pnpm idt:probe <ir路径> [--project <name>] [--pick <序号>]`
 - 同步拓扑与语义索引：`pnpm idt:sync`（多项目宿主默认同步全部，`--project <name>` 只同步一个）
 - 按路由批量生成：`pnpm idt:batch [--project <name>] [--limit <n>] [--filter <子串>] [--exclude <子串,子串>]`
-- 离线校验生成用例：`pnpm idt:verify [--project <name>] [--strict]`（不指定项目时校验全部项目）
+- 离线校验生成用例：`pnpm idt:verify [--project <name>] [--strict]`（不指定项目时校验全部项目；拓扑陈旧时报错，开发期惯用 `pnpm idt:sync && pnpm idt:verify`）
 - 运行某个项目的端到端测试：`pnpm idt:test [spec...] [--project <name>] [playwright 参数]`
 - 列出发现到的 IDT 项目：`pnpm idt:projects`
 - 运行单元测试套件：`pnpm test:idt`（单测在 `tests/unit/`，不访问网络，也不启动浏览器）

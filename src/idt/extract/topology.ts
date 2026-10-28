@@ -32,6 +32,7 @@ import {
   collectComponentElements,
   collectComponentTransitions,
 } from './component-nav.js';
+import { computeInputsDigest } from './inputs-digest.js';
 
 function isFunctionNode(node: Node): boolean {
   return (
@@ -764,11 +765,17 @@ export function extractProjectTopology(
   }
 
   const generatedAt = new Date().toISOString();
+  const inputsDigest = computeInputsDigest(projectRoot, {
+    pageGlobs: config.pageGlobs,
+    routerGlobs: config.routerGlobs,
+    localeFiles: config.localeFiles,
+  });
 
   const topology: ProjectTopology = {
     version: '1.0.0',
     generatedAt,
     sourceDigest,
+    inputsDigest,
     ...(options.projectName ? { project: options.projectName } : {}),
     ...(resolvedRouterMode
       ? {
