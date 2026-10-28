@@ -25,7 +25,10 @@ import { emitIrFile, emitSpec } from '../../src/idt/core/emitter.js';
 import { heal } from '../../src/idt/core/healer.js';
 import { formatHitMismatchWarning, probe } from '../../src/idt/core/prober.js';
 import { playwrightCliEntry } from '../../src/idt/core/runner.js';
-import { selectBatchRoutes } from '../../src/idt/core/batch-routes.js';
+import {
+  normalizeBatchExcludes,
+  selectBatchRoutes,
+} from '../../src/idt/core/batch-routes.js';
 import { readRouterOptions } from '../../src/idt/core/route-url.js';
 import {
   checkTopologyFreshness,
@@ -186,10 +189,11 @@ program
         process.exit(2);
       }
       const topology = JSON.parse(fs.readFileSync(topologyPath, 'utf8'));
+      const exclude = normalizeBatchExcludes(options.exclude, project.batchExclude);
 
       const routes = selectBatchRoutes(topology, {
         filter: options.filter,
-        exclude: options.exclude,
+        exclude,
         limit: options.limit,
       });
 

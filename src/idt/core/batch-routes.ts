@@ -3,9 +3,20 @@ import type { ProjectTopology } from '../schemas/topology.schema.js';
 export interface BatchRouteOptions {
   /** 只要路径里包含这个子串的路由。 */
   filter?: string;
-  /** 排除路径里包含这些子串的路由，逗号分隔。 */
-  exclude?: string;
+  /** 排除路径里包含这些子串的路由。 */
+  exclude: string[];
   limit?: number;
+}
+
+export function normalizeBatchExcludes(
+  commandLineValue: string | undefined,
+  markerValue: string[] | undefined,
+): string[] {
+  if (commandLineValue === undefined) return markerValue ?? [];
+  return commandLineValue
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
 }
 
 /**
@@ -35,12 +46,8 @@ export function selectBatchRoutes(
     routes = routes.filter((route) => route.includes(options.filter!));
   }
 
-  const excludes = (options.exclude ?? '')
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (excludes.length > 0) {
-    routes = routes.filter((route) => !excludes.some((part) => route.includes(part)));
+  if (options.exclude.length > 0) {
+    routes = routes.filter((route) => !options.exclude.some((part) => route.includes(part)));
   }
 
   if (options.limit && options.limit > 0) {

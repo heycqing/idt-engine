@@ -43,6 +43,8 @@ export interface IdtProject {
   port: number;
   /** 每次导航都带上的查询串，比如宿主的免登录渠道旁路。 */
   urlQuery?: Record<string, string>;
+  /** 白名单型宿主会把不放行的路由重定向，批量生成时默认跳过这些路由。 */
+  batchExclude?: string[];
   /** 覆盖静态检测出的路由模式。静态解析盖不到的写法走这里。 */
   routerMode?: 'hash' | 'history';
   /** 覆盖静态检测出的 base。运行期才有值的写法（window.xxx）只能写死在这。 */
@@ -103,6 +105,12 @@ function stringMap(value: unknown): Record<string, string> | undefined {
   return Object.fromEntries(entries as Array<[string, string]>);
 }
 
+/** 宿主标志不可信；有一个非字符串或没有排除项就整体忽略，避免坏配置拖垮 CLI。 */
+function nonEmptyStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  return value.every((item): item is string => typeof item === 'string') ? value : undefined;
+}
+
 function stringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
   const items = value.filter((item): item is string => typeof item === 'string');
@@ -161,6 +169,7 @@ export function resolveProjects(idtRoot: string, config: IdtConfig): IdtProject[
           LOCALE_CANDIDATES.filter((rel) => fs.existsSync(path.join(dir, ...rel.split('/')))),
         devCommand: devCommandOf(found),
         urlQuery: stringMap(marker.urlQuery),
+        batchExclude: nonEmptyStringArray(marker.batchExclude),
         routerMode: routerModeOf(marker.routerMode),
         routerBase:
           typeof marker.routerBase === 'string' && marker.routerBase.length > 0

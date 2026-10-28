@@ -76,6 +76,13 @@ routerGlobs: [
 
 `devCommand` 不写就按包名推 `pnpm --filter <name> dev`，包里没有 dev 脚本就不生成 `webServer`；`port` 不写按 3000。`IDT_BASE_URL` 和 `IDT_PORT` 仍可临时覆盖。
 
+白名单型宿主进入原生 App 模式后，不在白名单里的路由会被重定向。可以把批量生成时固定要排除的路由子串写进标志，避免忘带参数后把登录页误判成引擎问题：
+
+```json
+{ "idt": { "project": "yuekai", "urlQuery": { "channel": "ykapp" },
+           "batchExclude": ["credit", "trade/home"] } }
+```
+
 每个项目的拓扑、语义索引、Playwright 配置和生成的 spec 落在各自的项目根下，互不干扰：
 
 ```
@@ -143,7 +150,7 @@ IR 本身只存应用路由，不带 `#`。同一条 IR 在宿主从 hash 换成
 - 自愈失败 spec：`pnpm idt:heal <spec路径>`
 - 探测动作后的 DOM 增量：`pnpm idt:probe <ir路径> [--project <name>] [--pick <序号>]`
 - 同步拓扑与语义索引：`pnpm idt:sync`（多项目宿主默认同步全部，`--project <name>` 只同步一个）
-- 按路由批量生成：`pnpm idt:batch [--project <name>] [--limit <n>] [--filter <子串>] [--exclude <子串,子串>]`
+- 按路由批量生成：`pnpm idt:batch [--project <name>] [--limit <n>] [--filter <子串>] [--exclude <子串,子串>]`（项目标志可用 `batchExclude` 提供默认值；命令行显式给出 `--exclude` 时完全覆盖标志值，不做并集，因为并集会让“临时只排除一项”无法实现）
 - 离线校验生成用例：`pnpm idt:verify [--project <name>] [--strict]`（不指定项目时校验全部项目；拓扑陈旧时报错，开发期惯用 `pnpm idt:sync && pnpm idt:verify`）
 - 运行某个项目的端到端测试：`pnpm idt:test [spec...] [--project <name>] [playwright 参数]`
 - 列出发现到的 IDT 项目：`pnpm idt:projects`

@@ -92,6 +92,47 @@ describe('idt projects', () => {
     }
   });
 
+  it('reads batchExclude from the marker', () => {
+    const root = tempRoot();
+    try {
+      mark(root, 'apps/yuekai', {
+        project: 'yuekai',
+        batchExclude: ['credit', 'trade/home'],
+      });
+
+      const [project] = resolveProjects(root, { pageGlobs: [], routerGlobs: [], localeFiles: [] });
+      assert.deepEqual(project.batchExclude, ['credit', 'trade/home']);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores an empty batchExclude array', () => {
+    const root = tempRoot();
+    try {
+      mark(root, 'apps/yuekai', { project: 'yuekai', batchExclude: [] });
+
+      const [project] = resolveProjects(root, { pageGlobs: [], routerGlobs: [], localeFiles: [] });
+      assert.equal(project.batchExclude, undefined);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores invalid batchExclude values without throwing', () => {
+    for (const batchExclude of ['credit', ['credit', 7]]) {
+      const root = tempRoot();
+      try {
+        mark(root, 'apps/yuekai', { project: 'yuekai', batchExclude });
+
+        const [project] = resolveProjects(root, { pageGlobs: [], routerGlobs: [], localeFiles: [] });
+        assert.equal(project.batchExclude, undefined);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
   it('detects globs against the project root when the marker omits them', () => {
     const root = tempRoot();
     try {
