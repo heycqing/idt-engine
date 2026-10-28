@@ -140,6 +140,93 @@ describe('verify generated cases', () => {
     assert.equal(findings[0].code, 'missing-element');
   });
 
+  it('reports an error when routeGuard ready points to a deferred element', () => {
+    const ir = makeIr({
+      stages: [{
+        ...makeIr().stages[0],
+        actions: [],
+        invariants: {
+          network: [],
+          routeGuard: {
+            targetUrlPattern: '/home',
+            readyRole: 'textbox',
+            readyName: '请输入客户号',
+          },
+        },
+      }],
+    });
+    const findings = verify(ir, makeTopology([
+      { role: 'textbox', name: '请输入客户号', deferred: true },
+    ]));
+
+    assert.deepEqual(findings.map(({ code, level }) => ({ code, level })), [
+      { code: 'deferred-ready-assertion', level: 'error' },
+    ]);
+  });
+
+  it('does not treat a deferred action target as an invalid ready assertion', () => {
+    const findings = verify(
+      makeIr(),
+      makeTopology([{ role: 'button', name: '提交', deferred: true }]),
+    );
+
+    assert.deepEqual(findings, []);
+  });
+
+  it('checks deferred readiness against the routeGuard target page', () => {
+    const ir = makeIr({
+      initialRoute: '/source',
+      stages: [{
+        ...makeIr().stages[0],
+        routePattern: '/source',
+        actions: [],
+        invariants: {
+          network: [],
+          routeGuard: {
+            targetUrlPattern: '/target$',
+            readyRole: 'textbox',
+            readyName: '同名输入框',
+          },
+        },
+      }],
+    });
+    const topology = {
+      routes: {
+        '/source': { elements: [{ role: 'textbox', name: '同名输入框' }] },
+        '/target': { elements: [{ role: 'textbox', name: '同名输入框', deferred: true }] },
+      },
+    } as any;
+
+    assert.equal(verify(ir, topology)[0].code, 'deferred-ready-assertion');
+  });
+
+  it('does not use a source-page deferred duplicate to reject a target-page ready element', () => {
+    const ir = makeIr({
+      initialRoute: '/source',
+      stages: [{
+        ...makeIr().stages[0],
+        routePattern: '/source',
+        actions: [],
+        invariants: {
+          network: [],
+          routeGuard: {
+            targetUrlPattern: '/target$',
+            readyRole: 'textbox',
+            readyName: '同名输入框',
+          },
+        },
+      }],
+    });
+    const topology = {
+      routes: {
+        '/source': { elements: [{ role: 'textbox', name: '同名输入框', deferred: true }] },
+        '/target': { elements: [{ role: 'textbox', name: '同名输入框' }] },
+      },
+    } as any;
+
+    assert.deepEqual(verify(ir, topology), []);
+  });
+
   it('resolves a routePattern after removing leading and trailing anchors', () => {
     const ir = makeIr({
       stages: [{ ...makeIr().stages[0], routePattern: '^/home$' }],

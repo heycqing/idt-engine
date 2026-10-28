@@ -215,4 +215,64 @@ describe('component navigation', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it('keeps overlay descendants from imported components but marks them deferred', () => {
+    const root = temp();
+    try {
+      const page = write(
+        root,
+        'src/views/login/index.vue',
+        `<template><LoginPopup /></template>
+         <script>import LoginPopup from './components/LoginPopup.vue';</script>`,
+      );
+      write(
+        root,
+        'src/views/login/components/LoginPopup.vue',
+        `<template>
+           <div>
+             <button>打开登录</button>
+             <van-popup><input placeholder="请输入客户号" /></van-popup>
+           </div>
+         </template>`,
+      );
+
+      assert.deepEqual(collectComponentElements(root, page, new Set(), 1), [
+        { role: 'button', name: '打开登录' },
+        { role: 'textbox', name: '请输入客户号', deferred: true },
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('prefers an immediately available duplicate regardless of component import order', () => {
+    const root = temp();
+    try {
+      const page = write(
+        root,
+        'src/views/home/index.vue',
+        `<script>
+          import DeferredFirst from './DeferredFirst.vue';
+          import ReadySecond from './ReadySecond.vue';
+          import ReadyFirst from './ReadyFirst.vue';
+          import DeferredSecond from './DeferredSecond.vue';
+        </script>`,
+      );
+      write(root, 'src/views/home/DeferredFirst.vue',
+        '<template><van-popup><button>先弹后常</button></van-popup></template>');
+      write(root, 'src/views/home/ReadySecond.vue',
+        '<template><button>先弹后常</button></template>');
+      write(root, 'src/views/home/ReadyFirst.vue',
+        '<template><button>先常后弹</button></template>');
+      write(root, 'src/views/home/DeferredSecond.vue',
+        '<template><van-popup><button>先常后弹</button></van-popup></template>');
+
+      assert.deepEqual(collectComponentElements(root, page, new Set(), 1), [
+        { role: 'button', name: '先弹后常' },
+        { role: 'button', name: '先常后弹' },
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

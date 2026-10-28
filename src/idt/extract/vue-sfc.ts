@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { toPosixPath } from '../utils/path.js';
+import { DEFAULT_DEFERRED_CONTAINERS } from '../schemas/config.schema.js';
 
 const SKIP_DIRS = new Set([
   'node_modules',
@@ -36,6 +37,7 @@ export type PageElement = {
   role: ElementRole;
   name?: string;
   dynamic?: true;
+  deferred?: true;
   tag?: string;
 };
 
@@ -57,6 +59,7 @@ type Frame = {
   attrs: Attr[];
   role?: ElementRole;
   interpolated?: boolean;
+  deferred?: true;
 };
 
 // 标签到 ARIA role 的映射。宿主换组件库时只改这张表。
@@ -125,7 +128,10 @@ export function extractVueSfc(source: string): { template: string; script: strin
   };
 }
 
-export function scanVueTemplate(template: string): VueTemplateScan {
+export function scanVueTemplate(
+  template: string,
+  options: { deferredContainers?: string[] } = {},
+): VueTemplateScan {
   const source = template.replace(/<!--[\s\S]*?-->/g, '');
   const texts: string[] = [];
   const i18nKeys = collectI18nKeys(source);
@@ -133,6 +139,9 @@ export function scanVueTemplate(template: string): VueTemplateScan {
   const clicks = new Map<string, string | undefined>();
   const elements: PageElement[] = [];
   const stack: Frame[] = [];
+  const deferredContainers = new Set(
+    (options.deferredContainers ?? DEFAULT_DEFERRED_CONTAINERS).map((name) => name.toLowerCase()),
+  );
   let i = 0;
 
   while (i < source.length) {
@@ -173,7 +182,9 @@ export function scanVueTemplate(template: string): VueTemplateScan {
       continue;
     }
     i = open.end;
-    const frame = classifyTag(open.name, open.attrs);
+    const lowerName = open.name.toLowerCase();
+    const deferred = deferredContainers.has(lowerName) || stack.some((frame) => frame.deferred);
+    const frame = classifyTag(open.name, open.attrs, deferred);
     if (open.selfClosing) {
       finishFrame(frame, links, clicks, elements);
     } else {
@@ -395,33 +406,68 @@ function elementOf(frame: Frame): PageElement | null {
   if (frame.role === 'text') {
     if (frame.interpolated) return null;
     const text = frame.texts.join(' ').trim();
-    return text.length > 0 ? { role: 'text', name: text } : null;
+    return text.length > 0
+      ? { role: 'text', name: text, ...(frame.deferred ? { deferred: true as const } : {}) }
+      : null;
   }
 
   for (const attr of NAME_ATTRS) {
     if (attr === 'title') break;
     const literal = literalAttr(frame.attrs, attr);
-    if (literal) return { role: frame.role, name: literal };
+    if (literal) {
+      return {
+        role: frame.role,
+        name: literal,
+        ...(frame.deferred ? { deferred: true as const } : {}),
+      };
+    }
     if (hasBoundAttr(frame.attrs, attr)) {
-      return { role: frame.role, dynamic: true, tag: frame.name };
+      return {
+        role: frame.role,
+        dynamic: true,
+        tag: frame.name,
+        ...(frame.deferred ? { deferred: true as const } : {}),
+      };
     }
   }
 
   // 帧内出现过插值就不能用可见文本当名字：剥掉 {{ }} 之后剩下的是残句，
   // 比如 "保持在线 {{hours}} 小时" 会变成 "保持在线 小时"，运行期永远匹配不到。
   const text = frame.interpolated ? '' : frame.texts.join(' ').trim();
-  if (text.length > 0) return { role: frame.role, name: text };
-
-  const title = literalAttr(frame.attrs, 'title');
-  if (title) return { role: frame.role, name: title };
-  if (hasBoundAttr(frame.attrs, 'title')) {
-    return { role: frame.role, dynamic: true, tag: frame.name };
+  if (text.length > 0) {
+    return {
+      role: frame.role,
+      name: text,
+      ...(frame.deferred ? { deferred: true as const } : {}),
+    };
   }
 
-  return { role: frame.role, dynamic: true, tag: frame.name };
+  const title = literalAttr(frame.attrs, 'title');
+  if (title) {
+    return {
+      role: frame.role,
+      name: title,
+      ...(frame.deferred ? { deferred: true as const } : {}),
+    };
+  }
+  if (hasBoundAttr(frame.attrs, 'title')) {
+    return {
+      role: frame.role,
+      dynamic: true,
+      tag: frame.name,
+      ...(frame.deferred ? { deferred: true as const } : {}),
+    };
+  }
+
+  return {
+    role: frame.role,
+    dynamic: true,
+    tag: frame.name,
+    ...(frame.deferred ? { deferred: true as const } : {}),
+  };
 }
 
-function classifyTag(name: string, attrs: Attr[]): Frame {
+function classifyTag(name: string, attrs: Attr[], deferred: boolean): Frame {
   const lower = name.toLowerCase();
   const frame: Frame = {
     name: lower,
@@ -429,6 +475,7 @@ function classifyTag(name: string, attrs: Attr[]): Frame {
     texts: [],
     attrs,
     role: roleOf(lower, attrs),
+    ...(deferred ? { deferred: true as const } : {}),
   };
   if (lower === 'router-link') {
     const to = attrs.find((attr) => isToAttr(attr.name));
@@ -474,15 +521,19 @@ function finishFrame(
 }
 
 function dedupeElements(elements: PageElement[]): PageElement[] {
-  const seen = new Set<string>();
+  const indexes = new Map<string, number>();
   const out: PageElement[] = [];
   for (const element of elements) {
     const key =
       element.name !== undefined
         ? `${element.role}|${element.name}`
         : `${element.role}| ${element.tag ?? ''}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const existingIndex = indexes.get(key);
+    if (existingIndex !== undefined) {
+      if (out[existingIndex].deferred && !element.deferred) out[existingIndex] = element;
+      continue;
+    }
+    indexes.set(key, out.length);
     out.push(element);
   }
   return out;

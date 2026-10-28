@@ -32,6 +32,7 @@ describe('idt projects', () => {
         pageGlobs: ['src/views/**/*.vue'],
         routerGlobs: ['src/router/**/*.js'],
         localeFiles: ['locales/zh-CN.json'],
+        deferredContainers: [],
       });
 
       assert.equal(projects.length, 1);
@@ -40,6 +41,7 @@ describe('idt projects', () => {
       assert.deepEqual(projects[0].pageGlobs, ['src/views/**/*.vue']);
       assert.deepEqual(projects[0].routerGlobs, ['src/router/**/*.js']);
       assert.deepEqual(projects[0].localeFiles, ['locales/zh-CN.json']);
+      assert.deepEqual(projects[0].deferredContainers, []);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -52,10 +54,16 @@ describe('idt projects', () => {
       mark(root, 'apps/yuekai', { project: 'yuekai' }, '@trade/yuekai');
       write(root, 'apps/nomark/package.json', JSON.stringify({ name: '@trade/nomark' }));
 
-      const projects = resolveProjects(root, { pageGlobs: ['x'], routerGlobs: [], localeFiles: [] });
+      const projects = resolveProjects(root, {
+        pageGlobs: ['x'],
+        routerGlobs: [],
+        localeFiles: [],
+        deferredContainers: ['custom-modal'],
+      });
       assert.deepEqual(projects.map((p) => p.name), ['caida', 'yuekai']);
       assert.equal(projects[0].root, path.join(root, 'apps', 'caida'));
       assert.equal(projects[0].implicit, false);
+      assert.deepEqual(projects[0].deferredContainers, ['custom-modal']);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

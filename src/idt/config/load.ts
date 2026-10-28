@@ -3,7 +3,11 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import ts from 'typescript';
-import { IdtConfigSchema, type IdtConfig } from '../schemas/config.schema.js';
+import {
+  DEFAULT_DEFERRED_CONTAINERS,
+  IdtConfigSchema,
+  type IdtConfig,
+} from '../schemas/config.schema.js';
 
 export const DEFAULT_IDT_CONFIG: IdtConfig = {
   pageGlobs: [
@@ -13,6 +17,7 @@ export const DEFAULT_IDT_CONFIG: IdtConfig = {
   ],
   localeFiles: ['src/locales/zh-CN.json', 'locales/zh-CN.json'],
   routerGlobs: [],
+  deferredContainers: DEFAULT_DEFERRED_CONTAINERS,
 };
 
 export class IdtConfigError extends Error {
@@ -69,5 +74,8 @@ export function loadIdtConfig(projectRoot: string): IdtConfig {
     throw error;
   }
 
-  return parsed.data;
+  return {
+    ...parsed.data,
+    deferredContainers: parsed.data.deferredContainers ?? DEFAULT_DEFERRED_CONTAINERS,
+  };
 }

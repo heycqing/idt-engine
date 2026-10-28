@@ -15,6 +15,7 @@ export type FindingCode =
   | 'orphan-route'
   | 'unmatched-route-pattern'
   | 'missing-element'
+  | 'deferred-ready-assertion'
   | 'tautological-guard'
   | 'weak-assertion'
   | 'stale-topology';
@@ -109,6 +110,31 @@ function missingElementFinding(
     'error',
     'missing-element',
     `用例 ${flowId} 的 stageIndex ${stageIndex} 在路由 ${route} 引用了不存在的元素 (${role}, ${name})；该路由同 role 的现有候选名：${candidateText}。请确认元素是否改名或已删除，并更新 IR。`,
+  );
+}
+
+function deferredReadyFinding(
+  flowId: string,
+  stageIndex: number,
+  route: string,
+  elements: PageElement[],
+  role: TargetRole,
+  name: string,
+): VerifyFinding | null {
+  const matching = elements.filter(
+    (element) => !element.dynamic && element.role === role && element.name === name,
+  );
+  if (!matching.some((element) => element.deferred) || matching.some((element) => !element.deferred)) {
+    return null;
+  }
+
+  // 这是确定性的恒红而非质量建议：未发生打开动作时 overlay 后代不在 DOM，
+  // 因此用 error 阻止错误 IR 继续被当作可执行用例。
+  return finding(
+    flowId,
+    'error',
+    'deferred-ready-assertion',
+    `用例 ${flowId} 的 stageIndex ${stageIndex} 在路由 ${route} 把 overlay 内的元素 (${role}, ${name}) 当成页面就绪断言；该元素需要先触发容器，不能用于 routeGuard.readyRole/readyName。`,
   );
 }
 
@@ -241,15 +267,33 @@ export function verifyCases(
 
       const guard = stage.invariants.routeGuard;
       if (guard?.readyRole && guard.readyName) {
+        const targetRoute = exactRoute(guard.targetUrlPattern);
+        const hasTargetRoute = Object.hasOwn(topology.routes, targetRoute);
+        const readyRoute = hasTargetRoute ? targetRoute : route;
+        const readyElements = hasTargetRoute
+          ? elementsOf(topology.routes[targetRoute])
+          : elements;
         const result = missingElementFinding(
           flowId,
           stage.stageIndex,
-          route,
-          elements,
+          readyRoute,
+          readyElements,
           guard.readyRole,
           guard.readyName,
         );
-        if (result) findings.push(result);
+        if (result) {
+          findings.push(result);
+        } else {
+          const deferred = deferredReadyFinding(
+            flowId,
+            stage.stageIndex,
+            readyRoute,
+            readyElements,
+            guard.readyRole,
+            guard.readyName,
+          );
+          if (deferred) findings.push(deferred);
+        }
       }
     }
 

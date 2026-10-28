@@ -21,6 +21,8 @@ export const PageElementSchema = z.object({
   ]),
   name: z.string().min(1).optional(),
   dynamic: z.literal(true).optional(),
+  // overlay 未触发时不进 DOM；缺失即 false，旧拓扑仍可直接读取。
+  deferred: z.literal(true).optional(),
   tag: z.string().min(1).optional(),
 });
 

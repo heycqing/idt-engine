@@ -56,6 +56,20 @@ routerGlobs: [
 ],
 ```
 
+弹窗、对话框等 overlay 容器未打开时，后代元素通常不在 DOM，不能用来判断页面
+已经就绪。提取器会保留这些元素作为动作候选，同时给它们标记 `deferred: true`，
+生成器不会把它们选作 `routeGuard.readyRole/readyName`。默认识别
+`van-popup`、`van-dialog`、`van-action-sheet`、`van-sheet`、`van-overlay`。
+宿主使用其他组件库时，在 `idt.config.ts` 用 `deferredContainers` 完整覆盖默认清单；
+空数组表示不启用这类容器识别：
+
+```ts
+export default {
+  pageGlobs: ['src/views/**/*.vue'],
+  deferredContainers: ['el-dialog', 'custom-modal'],
+}
+```
+
 ## 多项目宿主
 
 一个宿主仓库里可以有多个相互独立的 IDT 项目，比如 monorepo 里的多个券商 App。业务方只在自己的 `package.json` 加一行标志：
@@ -103,7 +117,8 @@ apps/yuekai/.idt/...
 
 `idt:verify` 离线核对已经生成的 IR/spec 与当前拓扑和装配源码：检查配对文件、
 spec 漂移、IR 是否合 schema、未解决项、失效路由、缺失元素、同义反复的守卫，
-以及只有 URL 断言的弱用例。拓扑相对源文件已陈旧时会报 `stale-topology` 错误——
+把 overlay 后代误作就绪元素的 `deferred-ready-assertion`，以及只有 URL 断言的弱用例。
+拓扑相对源文件已陈旧时会报 `stale-topology` 错误——
 开发期的惯用法是 `pnpm idt:sync && pnpm idt:verify`。它不调用模型、不启动浏览器，
 也不访问网络；`--strict` 会把警告也视为失败。
 

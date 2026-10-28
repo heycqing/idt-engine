@@ -190,20 +190,25 @@ export function collectComponentElements(
   pageFile: string,
   pageFiles: ReadonlySet<string>,
   maxDepth = 1,
+  deferredContainers?: string[],
 ): PageElement[] {
   const out: PageElement[] = [];
-  const seen = new Set<string>();
+  const indexes = new Map<string, number>();
 
   walkImports(projectRoot, pageFile, pageFiles, maxDepth, (abs) => {
     const { template } = readSource(abs);
     if (!template) return;
-    for (const element of scanVueTemplate(template).elements) {
+    for (const element of scanVueTemplate(template, { deferredContainers }).elements) {
       const key =
         element.name !== undefined
           ? `${element.role}|${element.name}`
           : `${element.role}| ${element.tag ?? ''}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const existingIndex = indexes.get(key);
+      if (existingIndex !== undefined) {
+        if (out[existingIndex].deferred && !element.deferred) out[existingIndex] = element;
+        continue;
+      }
+      indexes.set(key, out.length);
       out.push(element);
     }
   });

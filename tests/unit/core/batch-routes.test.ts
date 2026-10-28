@@ -14,6 +14,7 @@ const topology = {
     '/plan/list': { elements: [{ role: 'text', name: '条件单' }] },
     '/no-elements': { elements: [] },
     '/only-dynamic': { elements: [{ role: 'button', dynamic: true, tag: 'div' }] },
+    '/only-deferred': { elements: [{ role: 'button', name: '弹窗按钮', deferred: true }] },
   },
 } as any;
 
@@ -22,6 +23,7 @@ describe('batch route selection', () => {
     const routes = selectBatchRoutes(topology, { exclude: [] });
     assert.equal(routes.includes('/no-elements'), false);
     assert.equal(routes.includes('/only-dynamic'), false, 'dynamic 没有名字，断言不了');
+    assert.equal(routes.includes('/only-deferred'), false, '未触发弹窗时不能拿 deferred 元素断言就绪');
     assert.deepEqual(routes, [
       '/',
       '/credit/finance/buy',

@@ -19,6 +19,7 @@ function project(overrides: Partial<IdtProject> = {}): IdtProject {
     pageGlobs: [],
     routerGlobs: [],
     localeFiles: [],
+    deferredContainers: [],
     devCommand: 'pnpm dev:cd',
     port: 8080,
     ...overrides,

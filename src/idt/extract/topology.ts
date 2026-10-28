@@ -4,6 +4,7 @@ import path from 'node:path';
 import { Project, Node, SyntaxKind, type SourceFile } from 'ts-morph';
 import { loadIdtConfig } from '../config/load.js';
 import type { IdtConfig } from '../schemas/config.schema.js';
+import { DEFAULT_DEFERRED_CONTAINERS } from '../schemas/config.schema.js';
 import {
   toPosixPath,
   toRoutePattern,
@@ -124,7 +125,12 @@ function truncateCodeSlice(sliceText: string): string {
   return normalized;
 }
 
-function loadVuePages(project: Project, projectRoot: string, globs: string[]) {
+function loadVuePages(
+  project: Project,
+  projectRoot: string,
+  globs: string[],
+  deferredContainers: string[],
+) {
   const pages: Array<{
     sf: SourceFile;
     absPath: string;
@@ -135,7 +141,7 @@ function loadVuePages(project: Project, projectRoot: string, globs: string[]) {
     const absPath = path.resolve(projectRoot, ...relPosix.split('/'));
     const raw = fs.readFileSync(absPath, 'utf8');
     const sfc = extractVueSfc(raw);
-    const scan = scanVueTemplate(sfc.template);
+    const scan = scanVueTemplate(sfc.template, { deferredContainers });
     const virtualPath = path.resolve(projectRoot, '.idt-virtual', `${relPosix}.ts`);
     const script = sfc.script.trim() ? sfc.script : 'export {}\n';
     let sf: SourceFile;
@@ -186,7 +192,12 @@ export function extractProjectTopology(
   });
   if (patterns.length > 0) project.addSourceFilesAtPaths(patterns);
 
-  const vuePages = loadVuePages(project, projectRoot, config.pageGlobs);
+  const vuePages = loadVuePages(
+    project,
+    projectRoot,
+    config.pageGlobs,
+    config.deferredContainers ?? DEFAULT_DEFERRED_CONTAINERS,
+  );
   const fileItems: Array<{
     sf: SourceFile;
     absPath: string;
@@ -308,15 +319,21 @@ export function extractProjectTopology(
 
   /** 页面自身的元素在前，子组件的在后；role 与 name 都相同的去重。 */
   function mergeElements(own: PageElement[], fromComponents: PageElement[]): PageElement[] {
-    const seen = new Set<string>();
+    const indexes = new Map<string, number>();
     const out: PageElement[] = [];
     for (const element of [...own, ...fromComponents]) {
       const key =
         element.name !== undefined
           ? `${element.role}|${element.name}`
           : `${element.role}| ${element.tag ?? ''}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const existingIndex = indexes.get(key);
+      if (existingIndex !== undefined) {
+        if (out[existingIndex].deferred && !element.deferred) {
+          out[existingIndex] = { ...element };
+        }
+        continue;
+      }
+      indexes.set(key, out.length);
       out.push({ ...element });
     }
     return out;
@@ -745,6 +762,7 @@ export function extractProjectTopology(
                 item.absPath,
                 allPageFiles,
                 componentNavDepth,
+                config.deferredContainers ?? DEFAULT_DEFERRED_CONTAINERS,
               )
             : [],
         ),

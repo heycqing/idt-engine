@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { IdtConfig } from '../schemas/config.schema.js';
+import { DEFAULT_DEFERRED_CONTAINERS } from '../schemas/config.schema.js';
 import { toPosixPath } from '../utils/path.js';
 
 export const DEFAULT_PROJECT_GLOBS = ['apps/*', 'packages/*'];
@@ -37,6 +38,7 @@ export interface IdtProject {
   pageGlobs: string[];
   routerGlobs: string[];
   localeFiles: string[];
+  deferredContainers: string[];
   /** 起开发服务器的命令。标志没写就从包名推，包里没有 dev 脚本就没有。 */
   devCommand?: string;
   /** 开发服务器端口，标志没写按 3000。 */
@@ -167,6 +169,7 @@ export function resolveProjects(idtRoot: string, config: IdtConfig): IdtProject[
         localeFiles:
           stringArray(marker.localeFiles) ??
           LOCALE_CANDIDATES.filter((rel) => fs.existsSync(path.join(dir, ...rel.split('/')))),
+        deferredContainers: config.deferredContainers ?? DEFAULT_DEFERRED_CONTAINERS,
         devCommand: devCommandOf(found),
         urlQuery: stringMap(marker.urlQuery),
         batchExclude: nonEmptyStringArray(marker.batchExclude),
@@ -196,6 +199,7 @@ export function resolveProjects(idtRoot: string, config: IdtConfig): IdtProject[
       pageGlobs: config.pageGlobs,
       routerGlobs: config.routerGlobs,
       localeFiles: config.localeFiles,
+      deferredContainers: config.deferredContainers ?? DEFAULT_DEFERRED_CONTAINERS,
       devCommand: devCommandOf(readMarker(path.join(root, 'package.json')) ?? {
         marker: {},
         packageName: null,

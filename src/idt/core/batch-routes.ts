@@ -35,8 +35,8 @@ export function selectBatchRoutes(
 ): string[] {
   let routes = Object.entries(topology.routes)
     .filter(([, node]) =>
-      ((node as { elements?: Array<{ name?: string }> }).elements ?? []).some(
-        (element) => typeof element.name === 'string' && element.name.length > 0,
+      ((node as { elements?: Array<{ name?: string; deferred?: true }> }).elements ?? []).some(
+        (element) => !element.deferred && typeof element.name === 'string' && element.name.length > 0,
       ),
     )
     .map(([route]) => route)

@@ -70,6 +70,7 @@ function extractOptions(project: IdtProject) {
       pageGlobs: project.pageGlobs,
       routerGlobs: project.routerGlobs,
       localeFiles: project.localeFiles,
+      deferredContainers: project.deferredContainers,
     },
     projectName: project.implicit ? undefined : project.name,
     routerQuery: project.urlQuery,

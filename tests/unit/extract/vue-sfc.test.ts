@@ -205,4 +205,36 @@ describe('vue sfc', () => {
       { role: 'text', name: '确认' },
     ]);
   });
+
+  it('marks only elements inside deferred containers, including nested descendants', () => {
+    const scan = scanVueTemplate(`
+      <div>
+        <button>页面按钮</button>
+        <van-popup>
+          <section><van-dialog><input placeholder="弹窗输入框" /></van-dialog></section>
+        </van-popup>
+        <button>弹窗后的按钮</button>
+      </div>
+    `);
+
+    assert.deepEqual(scan.elements, [
+      { role: 'button', name: '页面按钮' },
+      { role: 'textbox', name: '弹窗输入框', deferred: true },
+      { role: 'button', name: '弹窗后的按钮' },
+    ]);
+  });
+
+  it('uses the configured deferred container list as a complete override', () => {
+    const scan = scanVueTemplate(`
+      <div>
+        <custom-modal><button>自定义弹窗按钮</button></custom-modal>
+        <van-popup><button>默认容器按钮</button></van-popup>
+      </div>
+    `, { deferredContainers: ['custom-modal'] });
+
+    assert.deepEqual(scan.elements, [
+      { role: 'button', name: '自定义弹窗按钮', deferred: true },
+      { role: 'button', name: '默认容器按钮' },
+    ]);
+  });
 });

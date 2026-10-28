@@ -568,10 +568,122 @@ describe('ir-compiler', () => {
     // readyRole/readyName 必须和 targetName 受同样约束，否则模型会拿页面标题顶替
     assert.match(IR_SYSTEM_PROMPT, /readyRole and readyName are under the SAME rule/);
     assert.match(IR_SYSTEM_PROMPT, /omit readyRole and readyName entirely/);
+    assert.match(IR_SYSTEM_PROMPT, /deferred.*must not.*routeGuard readyRole/i);
     assert.equal(
       IR_SYSTEM_PROMPT.includes('never use it for routeGuard readyRole'),
       false,
     );
+  });
+
+  it('removes a deferred ready element even when the model ignores the prompt rule', async () => {
+    const tmp = createTempDir();
+    try {
+      writeFile(
+        tmp,
+        'idt.config.ts',
+        `export default { pageGlobs: ['src/views/**/*.vue'], localeFiles: [] };`,
+      );
+      writeFile(
+        tmp,
+        'src/views/login/index.vue',
+        `<template><van-popup><input placeholder="请输入客户号" /></van-popup></template>`,
+      );
+      const model: ModelClient = {
+        async complete() {
+          return JSON.stringify({
+            description: '登录页可打开',
+            initialRoute: '/login',
+            setup: { notes: [] },
+            unresolved: [],
+            stages: [{
+              stageIndex: 0,
+              stageName: '登录页',
+              routePattern: '/login',
+              actions: [],
+              invariants: {
+                network: [],
+                routeGuard: {
+                  targetUrlPattern: '/login',
+                  readyRole: 'textbox',
+                  readyName: '请输入客户号',
+                },
+              },
+            }],
+          });
+        },
+      };
+
+      const ir = await compileIntent({
+        projectRoot: tmp,
+        intent: '打开登录页',
+        route: '/login',
+        model,
+      });
+
+      assert.deepEqual(ir.stages[0].invariants.routeGuard, {
+        targetUrlPattern: '/login',
+      });
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
+  it('removes deferred readiness from the routeGuard target page, not the source page', async () => {
+    const tmp = createTempDir();
+    try {
+      writeFile(
+        tmp,
+        'idt.config.ts',
+        `export default { pageGlobs: ['src/views/**/*.vue'], localeFiles: [] };`,
+      );
+      writeFile(
+        tmp,
+        'src/views/source/index.vue',
+        `<template><input placeholder="同名输入框" /></template>`,
+      );
+      writeFile(
+        tmp,
+        'src/views/target/index.vue',
+        `<template><van-popup><input placeholder="同名输入框" /></van-popup></template>`,
+      );
+      const model: ModelClient = {
+        async complete() {
+          return JSON.stringify({
+            description: '跳到目标页',
+            initialRoute: '/source',
+            setup: { notes: [] },
+            unresolved: [],
+            stages: [{
+              stageIndex: 0,
+              stageName: '目标页',
+              routePattern: '/source',
+              actions: [],
+              invariants: {
+                network: [],
+                routeGuard: {
+                  targetUrlPattern: '/target$',
+                  readyRole: 'textbox',
+                  readyName: '同名输入框',
+                },
+              },
+            }],
+          });
+        },
+      };
+
+      const ir = await compileIntent({
+        projectRoot: tmp,
+        intent: '跳到目标页',
+        route: '/source',
+        model,
+      });
+
+      assert.deepEqual(ir.stages[0].invariants.routeGuard, {
+        targetUrlPattern: '/target$',
+      });
+    } finally {
+      removeTempDir(tmp);
+    }
   });
   it('extracts the topology with the globs handed in by the caller', async () => {
     const tmp = createTempDir();

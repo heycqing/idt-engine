@@ -47,6 +47,13 @@ describe('topology extraction and semantic index', () => {
 
       assert.deepEqual(loadIdtConfig(tmp).routerGlobs, ['src/router/**/*.{js,ts}']);
       assert.deepEqual(DEFAULT_IDT_CONFIG.routerGlobs, []);
+      assert.deepEqual(loadIdtConfig(tmp).deferredContainers, [
+        'van-popup',
+        'van-dialog',
+        'van-action-sheet',
+        'van-sheet',
+        'van-overlay',
+      ]);
     } finally {
       removeTempDir(tmp);
     }
@@ -797,6 +804,63 @@ ${paddingLines}
     assert.equal(parsed.success, true);
     if (parsed.success) {
       assert.deepEqual(parsed.data.routes['/buy'].elements, []);
+    }
+  });
+
+  it('accepts legacy topology elements without the deferred field', () => {
+    const element = { role: 'button', name: '确认' };
+    const parsed = ProjectTopologySchema.safeParse({
+      version: '1.0.0',
+      generatedAt: '2026-10-01T00:00:00.000Z',
+      sourceDigest: 'a'.repeat(64),
+      routes: {
+        '/buy': {
+          path: '/buy',
+          filePath: 'src/views/buy/index.vue',
+          title: 'index',
+          semanticKeywords: [],
+          dynamicParams: [],
+          transitions: [],
+          elements: [element],
+        },
+      },
+    });
+
+    assert.equal(parsed.success, true);
+    if (parsed.success) {
+      assert.deepEqual(parsed.data.routes['/buy'].elements, [element]);
+    }
+  });
+
+  it('applies deferredContainers from idt.config.ts to page-owned elements', () => {
+    const tmp = createTempDir();
+    try {
+      writeFile(
+        tmp,
+        'idt.config.ts',
+        `export default {
+          pageGlobs: ['src/views/**/*.vue'],
+          localeFiles: [],
+          deferredContainers: ['custom-modal'],
+        };`,
+      );
+      writeFile(
+        tmp,
+        'src/views/home/index.vue',
+        `<template>
+          <div>
+            <custom-modal><button>稍后出现</button></custom-modal>
+            <van-popup><button>覆盖默认值后立即可用</button></van-popup>
+          </div>
+        </template>`,
+      );
+
+      assert.deepEqual(extractProjectTopology(tmp).routes['/home'].elements, [
+        { role: 'button', name: '稍后出现', deferred: true },
+        { role: 'button', name: '覆盖默认值后立即可用' },
+      ]);
+    } finally {
+      removeTempDir(tmp);
     }
   });
   it('does not invent file-path routes once the router resolved every record', () => {
