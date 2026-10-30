@@ -23,7 +23,8 @@ export function normalizeBatchExcludes(
  * 挑出值得批量生成的路由。
  *
  * 只收至少有一个"有确定名字"的元素的路由——没有可断言的东西，生成出来
- * 也是废的。`dynamic` 的元素不算：它的名字运行期才定，断言不了。
+ * 也是废的。`dynamic` 的名字运行期才定；`deferred` 要先打开容器；
+ * `dataScoped` 要先有后端行数据。三者都不能作为页面就绪断言。
  *
  * exclude 是为白名单型宿主准备的：粤开那几家的渠道码不是免登录旁路而是
  * 原生 App 模式，credit 路由不在白名单里，一律被重定向，批量生成它们
@@ -35,8 +36,20 @@ export function selectBatchRoutes(
 ): string[] {
   let routes = Object.entries(topology.routes)
     .filter(([, node]) =>
-      ((node as { elements?: Array<{ name?: string; deferred?: true }> }).elements ?? []).some(
-        (element) => !element.deferred && typeof element.name === 'string' && element.name.length > 0,
+      ((node as {
+        elements?: Array<{
+          name?: string;
+          dynamic?: true;
+          deferred?: true;
+          dataScoped?: true;
+        }>;
+      }).elements ?? []).some(
+        (element) =>
+          !element.dynamic
+          && !element.deferred
+          && !element.dataScoped
+          && typeof element.name === 'string'
+          && element.name.length > 0,
       ),
     )
     .map(([route]) => route)

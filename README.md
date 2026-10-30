@@ -162,6 +162,7 @@ IR 本身只存应用路由，不带 `#`。同一条 IR 在宿主从 hash 换成
 - 把引擎接到宿主：`pnpm idt:link -- --host <宿主根目录>`
 - 生成状态转移 IR 与 spec：`pnpm idt "<intent>"`（需要项目根目录的 `.env.idt.local` 填好 `OPENAI_API_KEY`；`gen` 会同时写出 IR 与 spec，带 `--yes` 才会执行这条 spec）
 - 从 IR 写出 spec：`pnpm idt:emit <ir路径>`（不需要安装 Playwright）
+- 重新装配某项目的全部 IR：`pnpm idt:emit --all [--project <name>]`（纯本地装配，不调用模型）
 - 自愈失败 spec：`pnpm idt:heal <spec路径>`
 - 探测动作后的 DOM 增量：`pnpm idt:probe <ir路径> [--project <name>] [--pick <序号>]`
 - 同步拓扑与语义索引：`pnpm idt:sync`（多项目宿主默认同步全部，`--project <name>` 只同步一个）

@@ -154,7 +154,7 @@ export async function launchChromiumReplay<T>(
     const locate = (role: string, name: string) =>
       role === 'text'
         ? playwrightPage.getByText(name, { exact: true })
-        : playwrightPage.getByRole(role as any, { name });
+        : playwrightPage.getByRole(role as any, { name, exact: true });
 
     const replayPage: ReplayPage = {
       url() {

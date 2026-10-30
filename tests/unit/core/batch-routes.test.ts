@@ -14,7 +14,9 @@ const topology = {
     '/plan/list': { elements: [{ role: 'text', name: '条件单' }] },
     '/no-elements': { elements: [] },
     '/only-dynamic': { elements: [{ role: 'button', dynamic: true, tag: 'div' }] },
+    '/only-named-dynamic': { elements: [{ role: 'button', name: '运行期按钮', dynamic: true }] },
     '/only-deferred': { elements: [{ role: 'button', name: '弹窗按钮', deferred: true }] },
+    '/only-data-scoped': { elements: [{ role: 'button', name: '逐行按钮', dataScoped: true }] },
   },
 } as any;
 
@@ -23,7 +25,9 @@ describe('batch route selection', () => {
     const routes = selectBatchRoutes(topology, { exclude: [] });
     assert.equal(routes.includes('/no-elements'), false);
     assert.equal(routes.includes('/only-dynamic'), false, 'dynamic 没有名字，断言不了');
+    assert.equal(routes.includes('/only-named-dynamic'), false, '即使残留名字也不能拿 dynamic 元素断言就绪');
     assert.equal(routes.includes('/only-deferred'), false, '未触发弹窗时不能拿 deferred 元素断言就绪');
+    assert.equal(routes.includes('/only-data-scoped'), false, '没有后端行数据时不能拿 dataScoped 元素断言就绪');
     assert.deepEqual(routes, [
       '/',
       '/credit/finance/buy',

@@ -42,7 +42,7 @@ function renderNamedLocator(role: string, name: string): string {
   const nameStr = JSON.stringify(name);
   return role === 'text'
     ? `page.getByText(${nameStr}, { exact: true })`
-    : `page.getByRole(${JSON.stringify(role)}, { name: ${nameStr} })`;
+    : `page.getByRole(${JSON.stringify(role)}, { name: ${nameStr}, exact: true })`;
 }
 
 export function emitSpec(
@@ -393,4 +393,19 @@ export function emitIrFile(
   fs.renameSync(tmpPath, specPath);
 
   return { specPath, source };
+}
+
+/** 只重装配项目内已有 IR；不读取模型配置，也不发起模型调用。 */
+export function emitAllIrFiles(
+  projectRoot: string,
+  router: RouterUrlOptions = readRouterOptions(projectRoot),
+): Array<{ specPath: string; source: string }> {
+  const generatedDir = path.resolve(projectRoot, 'tests', 'e2e', 'generated');
+  if (!fs.existsSync(generatedDir)) return [];
+  return fs
+    .readdirSync(generatedDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.ir.json'))
+    .map((entry) => entry.name)
+    .sort()
+    .map((name) => emitIrFile(projectRoot, path.join(generatedDir, name), router));
 }

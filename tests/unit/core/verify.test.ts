@@ -173,6 +173,60 @@ describe('verify generated cases', () => {
     assert.deepEqual(findings, []);
   });
 
+  it('reports an error when routeGuard ready points only to a data-scoped element', () => {
+    const ir = makeIr({
+      stages: [{
+        ...makeIr().stages[0],
+        actions: [],
+        invariants: {
+          network: [],
+          routeGuard: {
+            targetUrlPattern: '/home',
+            readyRole: 'button',
+            readyName: '买入',
+          },
+        },
+      }],
+    });
+
+    assert.deepEqual(
+      verify(ir, makeTopology([{ role: 'button', name: '买入', dataScoped: true }]))
+        .map(({ code, level }) => ({ code, level })),
+      [{ code: 'data-scoped-ready-assertion', level: 'error' }],
+    );
+  });
+
+  it('does not report data-scoped readiness when an unscoped duplicate exists', () => {
+    const ir = makeIr({
+      stages: [{
+        ...makeIr().stages[0],
+        actions: [],
+        invariants: {
+          network: [],
+          routeGuard: {
+            targetUrlPattern: '/home',
+            readyRole: 'button',
+            readyName: '买入',
+          },
+        },
+      }],
+    });
+
+    assert.deepEqual(verify(ir, makeTopology([
+      { role: 'button', name: '买入', dataScoped: true },
+      { role: 'button', name: '买入' },
+    ])), []);
+  });
+
+  it('does not reject a data-scoped element used only as an action target', () => {
+    assert.deepEqual(
+      verify(makeIr(), makeTopology([
+        { role: 'button', name: '提交', dataScoped: true },
+      ])),
+      [],
+    );
+  });
+
   it('checks deferred readiness against the routeGuard target page', () => {
     const ir = makeIr({
       initialRoute: '/source',

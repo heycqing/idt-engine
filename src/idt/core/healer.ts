@@ -102,7 +102,7 @@ export function locateHealTarget(
   const lineText = lines[failure.line - 1];
   const roleMatches = Array.from(
     lineText.matchAll(
-      /getByRole\(\s*("(?:[^"\\]|\\.)*")\s*,\s*\{\s*name:\s*("(?:[^"\\]|\\.)*")\s*\}\)/g,
+      /getByRole\(\s*("(?:[^"\\]|\\.)*")\s*,\s*\{\s*name:\s*("(?:[^"\\]|\\.)*")(?:\s*,\s*exact:\s*true)?\s*\}\)/g,
     ),
   );
   const textMatches = Array.from(

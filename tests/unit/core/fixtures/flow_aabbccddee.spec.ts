@@ -7,18 +7,18 @@ test.use({ storageState: "tests/e2e/states/cart-two-items.json" });
 
 test("购物车结算并支付", async ({ page }) => {
   await page.goto("/cart");
-  await page.getByRole("textbox", { name: "备注" }).fill("尽快送达", { timeout: 5000 });
-  await page.getByRole("checkbox", { name: "同意协议" }).check({ timeout: 5000 });
-  await page.getByRole("button", { name: "去结算" }).click({ timeout: 5000 });
+  await page.getByRole("textbox", { name: "备注", exact: true }).fill("尽快送达", { timeout: 5000 });
+  await page.getByRole("checkbox", { name: "同意协议", exact: true }).check({ timeout: 5000 });
+  await page.getByRole("button", { name: "去结算", exact: true }).click({ timeout: 5000 });
   await page.waitForURL(new RegExp("/checkout$"), { timeout: 5000 });
   await expect(page).toHaveURL(new RegExp("/checkout$"));
-  await expect(page.getByRole("heading", { name: "结算" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "结算", exact: true })).toBeVisible();
   const [response0] = await Promise.all([
     page.waitForResponse((res) =>
       res.url().includes("/api/orders") && res.request().method() === "POST",
       { timeout: 5000 },
     ),
-    page.getByRole("button", { name: "立即支付" }).click({ timeout: 5000 }),
+    page.getByRole("button", { name: "立即支付", exact: true }).click({ timeout: 5000 }),
   ]);
   expect(response0.status()).toBe(200);
   const body0 = await response0.json();
@@ -26,5 +26,5 @@ test("购物车结算并支付", async ({ page }) => {
   expect(body0.data.orderId).toEqual(1001);
   await page.waitForURL(new RegExp("/checkout/success$"), { timeout: 5000 });
   await expect(page).toHaveURL(new RegExp("/checkout/success$"));
-  await expect(page.getByRole("heading", { name: "支付成功" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "支付成功", exact: true })).toBeVisible();
 });

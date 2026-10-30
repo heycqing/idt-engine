@@ -38,6 +38,7 @@ export type PageElement = {
   name?: string;
   dynamic?: true;
   deferred?: true;
+  dataScoped?: true;
   tag?: string;
 };
 
@@ -60,6 +61,7 @@ type Frame = {
   role?: ElementRole;
   interpolated?: boolean;
   deferred?: true;
+  dataScoped?: true;
 };
 
 // 标签到 ARIA role 的映射。宿主换组件库时只改这张表。
@@ -184,7 +186,9 @@ export function scanVueTemplate(
     i = open.end;
     const lowerName = open.name.toLowerCase();
     const deferred = deferredContainers.has(lowerName) || stack.some((frame) => frame.deferred);
-    const frame = classifyTag(open.name, open.attrs, deferred);
+    const dataScoped = isDataScopeBoundary(lowerName, open.attrs)
+      || stack.some((frame) => frame.dataScoped);
+    const frame = classifyTag(open.name, open.attrs, deferred, dataScoped);
     if (open.selfClosing) {
       finishFrame(frame, links, clicks, elements);
     } else {
@@ -365,6 +369,22 @@ function hasBoundAttr(attrs: Attr[], name: string): boolean {
   });
 }
 
+/** 只认明确的作用域插槽和值合法的 v-for，宁可漏掉非标准写法也不误排就绪元素。 */
+function isDataScopeBoundary(tag: string, attrs: Attr[]): boolean {
+  const hasFor = attrs.some(
+    (attr) => attr.name.toLowerCase() === 'v-for' && Boolean(attr.value?.trim()),
+  );
+  if (hasFor) return true;
+  if (tag !== 'template') return false;
+  return attrs.some((attr) => {
+    const name = attr.name.toLowerCase();
+    const isScopedSlot =
+      (name.startsWith('#') && name.length > 1)
+      || (name.startsWith('v-slot:') && name.length > 'v-slot:'.length);
+    return isScopedSlot && Boolean(attr.value?.trim());
+  });
+}
+
 function roleOf(tag: string, attrs: Attr[]): ElementRole | undefined {
   const explicit = literalAttr(attrs, 'role');
   if (explicit && isElementRole(explicit)) return explicit;
@@ -400,6 +420,10 @@ function roleOf(tag: string, attrs: Attr[]): ElementRole | undefined {
 /** 名称取值顺序：aria-label → label → placeholder → 帧内可见文本 → title。 */
 function elementOf(frame: Frame): PageElement | null {
   if (!frame.role) return null;
+  const scope = {
+    ...(frame.deferred ? { deferred: true as const } : {}),
+    ...(frame.dataScoped ? { dataScoped: true as const } : {}),
+  };
 
   // 文本定位的元素只认静态可见文本：没有文本就定位不了，收进来只会让模型
   // 反复试一个注定失败的方向，所以直接不收，也不产出 dynamic 占位。
@@ -407,7 +431,7 @@ function elementOf(frame: Frame): PageElement | null {
     if (frame.interpolated) return null;
     const text = frame.texts.join(' ').trim();
     return text.length > 0
-      ? { role: 'text', name: text, ...(frame.deferred ? { deferred: true as const } : {}) }
+      ? { role: 'text', name: text, ...scope }
       : null;
   }
 
@@ -418,7 +442,7 @@ function elementOf(frame: Frame): PageElement | null {
       return {
         role: frame.role,
         name: literal,
-        ...(frame.deferred ? { deferred: true as const } : {}),
+        ...scope,
       };
     }
     if (hasBoundAttr(frame.attrs, attr)) {
@@ -426,7 +450,7 @@ function elementOf(frame: Frame): PageElement | null {
         role: frame.role,
         dynamic: true,
         tag: frame.name,
-        ...(frame.deferred ? { deferred: true as const } : {}),
+        ...scope,
       };
     }
   }
@@ -438,7 +462,7 @@ function elementOf(frame: Frame): PageElement | null {
     return {
       role: frame.role,
       name: text,
-      ...(frame.deferred ? { deferred: true as const } : {}),
+      ...scope,
     };
   }
 
@@ -447,7 +471,7 @@ function elementOf(frame: Frame): PageElement | null {
     return {
       role: frame.role,
       name: title,
-      ...(frame.deferred ? { deferred: true as const } : {}),
+      ...scope,
     };
   }
   if (hasBoundAttr(frame.attrs, 'title')) {
@@ -455,7 +479,7 @@ function elementOf(frame: Frame): PageElement | null {
       role: frame.role,
       dynamic: true,
       tag: frame.name,
-      ...(frame.deferred ? { deferred: true as const } : {}),
+      ...scope,
     };
   }
 
@@ -463,11 +487,16 @@ function elementOf(frame: Frame): PageElement | null {
     role: frame.role,
     dynamic: true,
     tag: frame.name,
-    ...(frame.deferred ? { deferred: true as const } : {}),
+    ...scope,
   };
 }
 
-function classifyTag(name: string, attrs: Attr[], deferred: boolean): Frame {
+function classifyTag(
+  name: string,
+  attrs: Attr[],
+  deferred: boolean,
+  dataScoped: boolean,
+): Frame {
   const lower = name.toLowerCase();
   const frame: Frame = {
     name: lower,
@@ -476,6 +505,7 @@ function classifyTag(name: string, attrs: Attr[], deferred: boolean): Frame {
     attrs,
     role: roleOf(lower, attrs),
     ...(deferred ? { deferred: true as const } : {}),
+    ...(dataScoped ? { dataScoped: true as const } : {}),
   };
   if (lower === 'router-link') {
     const to = attrs.find((attr) => isToAttr(attr.name));
@@ -527,10 +557,17 @@ function dedupeElements(elements: PageElement[]): PageElement[] {
     const key =
       element.name !== undefined
         ? `${element.role}|${element.name}`
-        : `${element.role}| ${element.tag ?? ''}`;
+        : `${element.role}|\0${element.tag ?? ''}`;
     const existingIndex = indexes.get(key);
     if (existingIndex !== undefined) {
-      if (out[existingIndex].deferred && !element.deferred) out[existingIndex] = element;
+      const existing = out[existingIndex];
+      if (
+        (existing.deferred || existing.dataScoped)
+        && !element.deferred
+        && !element.dataScoped
+      ) {
+        out[existingIndex] = element;
+      }
       continue;
     }
     indexes.set(key, out.length);

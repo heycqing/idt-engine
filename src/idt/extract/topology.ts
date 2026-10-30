@@ -328,7 +328,12 @@ export function extractProjectTopology(
           : `${element.role}| ${element.tag ?? ''}`;
       const existingIndex = indexes.get(key);
       if (existingIndex !== undefined) {
-        if (out[existingIndex].deferred && !element.deferred) {
+        const existing = out[existingIndex];
+        if (
+          (existing.deferred || existing.dataScoped)
+          && !element.deferred
+          && !element.dataScoped
+        ) {
           out[existingIndex] = { ...element };
         }
         continue;

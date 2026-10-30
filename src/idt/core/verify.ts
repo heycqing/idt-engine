@@ -16,6 +16,7 @@ export type FindingCode =
   | 'unmatched-route-pattern'
   | 'missing-element'
   | 'deferred-ready-assertion'
+  | 'data-scoped-ready-assertion'
   | 'tautological-guard'
   | 'weak-assertion'
   | 'stale-topology';
@@ -135,6 +136,34 @@ function deferredReadyFinding(
     'error',
     'deferred-ready-assertion',
     `用例 ${flowId} 的 stageIndex ${stageIndex} 在路由 ${route} 把 overlay 内的元素 (${role}, ${name}) 当成页面就绪断言；该元素需要先触发容器，不能用于 routeGuard.readyRole/readyName。`,
+  );
+}
+
+function dataScopedReadyFinding(
+  flowId: string,
+  stageIndex: number,
+  route: string,
+  elements: PageElement[],
+  role: TargetRole,
+  name: string,
+): VerifyFinding | null {
+  const matching = elements.filter(
+    (element) => !element.dynamic && element.role === role && element.name === name,
+  );
+  if (
+    !matching.some((element) => element.dataScoped)
+    || matching.some((element) => !element.dataScoped)
+  ) {
+    return null;
+  }
+
+  // 页面就绪断言必须在空数据这一合法状态下也成立；逐行元素依赖后端返回，
+  // 把它当 ready 会让用例随数据有无漂移，因此和 deferred 一样用 error 阻断。
+  return finding(
+    flowId,
+    'error',
+    'data-scoped-ready-assertion',
+    `用例 ${flowId} 的 stageIndex ${stageIndex} 在路由 ${route} 把依赖后端行数据的元素 (${role}, ${name}) 当成页面就绪断言；空数据时该元素不会渲染，不能用于 routeGuard.readyRole/readyName。`,
   );
 }
 
@@ -293,6 +322,15 @@ export function verifyCases(
             guard.readyName,
           );
           if (deferred) findings.push(deferred);
+          const dataScoped = dataScopedReadyFinding(
+            flowId,
+            stage.stageIndex,
+            readyRoute,
+            readyElements,
+            guard.readyRole,
+            guard.readyName,
+          );
+          if (dataScoped) findings.push(dataScoped);
         }
       }
     }

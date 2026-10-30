@@ -21,7 +21,7 @@ import {
 } from '../../src/idt/core/playwright-config.js';
 import { generateFlow } from '../../src/idt/core/generate.js';
 import { OpenAiClient } from '../../src/idt/core/openai-client.js';
-import { emitIrFile, emitSpec } from '../../src/idt/core/emitter.js';
+import { emitAllIrFiles, emitIrFile, emitSpec } from '../../src/idt/core/emitter.js';
 import { heal } from '../../src/idt/core/healer.js';
 import { formatHitMismatchWarning, probe } from '../../src/idt/core/prober.js';
 import { playwrightCliEntry } from '../../src/idt/core/runner.js';
@@ -248,13 +248,32 @@ program
   });
 
 program
-  .command('emit <ir>')
+  .command('emit [ir]')
   .description('Emit Playwright spec from State Transition IR')
   .option('--project <name>', 'IDT project the IR belongs to')
-  .action((ir: string, options: { project?: string }) => {
+  .option('--all', 'Re-emit every IR in the selected project')
+  .action((ir: string | undefined, options: { project?: string; all?: boolean }) => {
     try {
       const { projects } = workspace();
       const project = pick(projects, options.project);
+      if (Boolean(ir) === Boolean(options.all)) {
+        const error = new Error('请提供一个 IR 路径，或使用 --all；两者必须且只能选一个。');
+        (error as any).exitCode = 2;
+        throw error;
+      }
+      if (options.all) {
+        const results = emitAllIrFiles(project.root);
+        for (const result of results) {
+          console.log(`Successfully emitted spec: ${result.specPath}`);
+        }
+        console.log(`已重新装配 ${results.length} 条 spec`);
+        process.exit(0);
+      }
+      if (!ir) {
+        const error = new Error('请提供一个 IR 路径，或使用 --all；两者必须且只能选一个。');
+        (error as any).exitCode = 2;
+        throw error;
+      }
       const result = emitIrFile(project.root, path.resolve(process.cwd(), ir));
       console.log(`Successfully emitted spec: ${result.specPath}`);
       process.exit(0);

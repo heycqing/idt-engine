@@ -61,7 +61,7 @@ Requirements:
 4a. "text" is not an ARIA role. It marks an element that has no role but does carry static text (for example, a <div> or <span>). It is located by its exact text and may be used for targetRole or routeGuard readyRole. Use it only when the matching page's elements list says so, never substitute it for a real role, and never use an element with "dynamic": true.
 5. Network invariant method, urlPattern, expectedStatus, and assertResponseFields must strictly come from code slices or prose case assertions.
 6. An intent that only opens a page is one stage with an empty "actions" array, asserted through invariants.routeGuard. This is valid output. An empty elements list or absent code slices is NOT a reason to return zero stages.
-6a. routeGuard.readyRole and readyName are under the SAME rule as targetRole and targetName: the pair must appear verbatim in that page's "elements" list, and an element with "dynamic": true has no usable name. An element with "deferred": true may still be an action target after its container opens, but must not be selected for routeGuard readyRole or readyName. If no non-dynamic, non-deferred element of the page qualifies, omit readyRole and readyName entirely and let the routeGuard assert the URL alone. Never fall back to the page title, a semanticKeyword, or any other string outside the elements list.
+6a. routeGuard.readyRole and readyName are under the SAME rule as targetRole and targetName: the pair must appear verbatim in that page's "elements" list, and an element with "dynamic": true has no usable name. An element with "deferred": true may still be an action target after its container opens, but must not be selected for routeGuard readyRole or readyName. An element with "dataScoped": true depends on row data and must not be selected for routeGuard readyRole or readyName. If no non-dynamic, non-deferred, non-dataScoped element of the page qualifies, omit readyRole and readyName entirely and let the routeGuard assert the URL alone. Never fall back to the page title, a semanticKeyword, or any other string outside the elements list.
 7. "unresolved" is only for operations the intent asks for but the payload cannot support: a required control missing from the elements list, a value with no matching input, or a name that is dynamic. Never put complaints about the payload itself (such as missing code slices) in it. A non-empty "unresolved" blocks spec emission, so leave it empty when the flow is fully determined.
 `;
 
@@ -80,7 +80,7 @@ export interface CompileIntentOptions {
   route?: string;
 }
 
-function removeDeferredReadyAssertions(
+function removeConditionalReadyAssertions(
   ir: StateTransitionIR,
   topology: ProjectTopology,
 ): void {
@@ -94,8 +94,8 @@ function removeDeferredReadyAssertions(
         element.role === guard.readyRole &&
         element.name === guard.readyName,
     );
-    if (!matching.some((element) => element.deferred)) continue;
-    if (matching.some((element) => !element.deferred)) continue;
+    if (!matching.some((element) => element.deferred || element.dataScoped)) continue;
+    if (matching.some((element) => !element.deferred && !element.dataScoped)) continue;
 
     // 模型提示不是运行时边界；这里兜底删除，避免偶发违约继续产出恒红 spec。
     delete guard.readyRole;
@@ -265,7 +265,7 @@ export async function compileIntent(
 
   // 6. validateIr（flowId / intent / oracle 已在 parseAndValidate 里注入）
   const ir = result.ir;
-  removeDeferredReadyAssertions(ir, topology);
+  removeConditionalReadyAssertions(ir, topology);
 
   validateIr(ir, {
     projectRoot,

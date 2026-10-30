@@ -205,7 +205,14 @@ export function collectComponentElements(
           : `${element.role}| ${element.tag ?? ''}`;
       const existingIndex = indexes.get(key);
       if (existingIndex !== undefined) {
-        if (out[existingIndex].deferred && !element.deferred) out[existingIndex] = element;
+        const existing = out[existingIndex];
+        if (
+          (existing.deferred || existing.dataScoped)
+          && !element.deferred
+          && !element.dataScoped
+        ) {
+          out[existingIndex] = element;
+        }
         continue;
       }
       indexes.set(key, out.length);

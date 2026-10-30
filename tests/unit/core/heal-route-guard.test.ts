@@ -216,7 +216,7 @@ describe('heal route guard ready assertion', () => {
       assert.equal(healedIr.stages[0].invariants.routeGuard.readyName, '智能交易登录');
       assert.match(
         fs.readFileSync(specPath, 'utf8'),
-        /getByRole\("heading", \{ name: "智能交易登录" \}\)/,
+        /getByRole\("heading", \{ name: "智能交易登录", exact: true \}\)/,
       );
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

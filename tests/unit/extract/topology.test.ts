@@ -832,6 +832,57 @@ ${paddingLines}
     }
   });
 
+  it('accepts legacy topology elements without the dataScoped field', () => {
+    const element = { role: 'button', name: '确认' };
+    const parsed = ProjectTopologySchema.safeParse({
+      version: '1.0.0',
+      generatedAt: '2026-10-01T00:00:00.000Z',
+      sourceDigest: 'a'.repeat(64),
+      routes: {
+        '/buy': {
+          path: '/buy',
+          filePath: 'src/views/buy/index.vue',
+          title: 'index',
+          semanticKeywords: [],
+          dynamicParams: [],
+          transitions: [],
+          elements: [element],
+        },
+      },
+    });
+
+    assert.equal(parsed.success, true);
+    if (parsed.success) {
+      assert.deepEqual(parsed.data.routes['/buy'].elements, [element]);
+    }
+  });
+
+  it('preserves dataScoped when reading a current topology', () => {
+    const parsed = ProjectTopologySchema.safeParse({
+      version: '1.0.0',
+      generatedAt: '2026-10-01T00:00:00.000Z',
+      sourceDigest: 'a'.repeat(64),
+      routes: {
+        '/buy': {
+          path: '/buy',
+          filePath: 'src/views/buy/index.vue',
+          title: 'index',
+          semanticKeywords: [],
+          dynamicParams: [],
+          transitions: [],
+          elements: [{ role: 'button', name: '买入', dataScoped: true }],
+        },
+      },
+    });
+
+    assert.equal(parsed.success, true);
+    if (parsed.success) {
+      assert.deepEqual(parsed.data.routes['/buy'].elements, [
+        { role: 'button', name: '买入', dataScoped: true },
+      ]);
+    }
+  });
+
   it('applies deferredContainers from idt.config.ts to page-owned elements', () => {
     const tmp = createTempDir();
     try {

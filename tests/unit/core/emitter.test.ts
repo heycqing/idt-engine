@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { emitSpec, emitIrFile } from '../../../src/idt/core/emitter.js';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import { emitAllIrFiles, emitSpec, emitIrFile } from '../../../src/idt/core/emitter.js';
 import type { StateTransitionIR } from '../../../src/idt/core/ir-schema.js';
 
 function createTempDir(prefix = 'idt-emit-test-'): string {
@@ -41,7 +43,7 @@ describe('emitter test suite', () => {
     const source = emitSpec(ir);
     const actionIndex = source.indexOf('.click(');
     const deltaIndex = source.indexOf(
-      'expect(page.getByRole("dialog", { name: "提交成功" })).toBeVisible({ timeout: 2345 })',
+      'expect(page.getByRole("dialog", { name: "提交成功", exact: true })).toBeVisible({ timeout: 2345 })',
     );
     const guardIndex = source.indexOf('page.waitForURL');
     assert.ok(actionIndex >= 0 && actionIndex < deltaIndex);
@@ -93,7 +95,7 @@ describe('emitter test suite', () => {
     assert.doesNotMatch(source, /getByRole\("text"/);
   });
 
-  it('keeps the byte-for-byte getByRole output for a button routeGuard ready assertion', () => {
+  it('uses exact getByRole while keeping getByText exact behavior unchanged', () => {
     const ir: StateTransitionIR = {
       flowId: 'flow_1234567890', intent: '打开按钮页', oracle: 'regression-lock',
       description: '按钮 ready', initialRoute: '/home', setup: { notes: [] },
@@ -119,10 +121,127 @@ describe('emitter test suite', () => {
       '  await page.goto("/home");',
       '  await page.waitForURL(new RegExp("/home$"), { timeout: 5000 });',
       '  await expect(page).toHaveURL(new RegExp("/home$"));',
-      '  await expect(page.getByRole("button", { name: "继续" })).toBeVisible();',
+      '  await expect(page.getByRole("button", { name: "继续", exact: true })).toBeVisible();',
       '});',
       '',
     ].join('\n'));
+  });
+
+  it('re-emits every IR in the project generated directory', () => {
+    const tmp = createTempDir('idt-emit-all-');
+    try {
+      const generatedDir = path.join(tmp, 'tests', 'e2e', 'generated');
+      fs.mkdirSync(generatedDir, { recursive: true });
+      for (const [flowId, route] of [
+        ['flow_1010101010', '/one'],
+        ['flow_2020202020', '/two'],
+      ] as const) {
+        fs.writeFileSync(
+          path.join(generatedDir, `${flowId}.ir.json`),
+          JSON.stringify({
+            flowId,
+            intent: `打开 ${route}`,
+            oracle: 'regression-lock',
+            description: `打开 ${route}`,
+            initialRoute: route,
+            setup: { notes: [] },
+            unresolved: [],
+            stages: [{
+              stageIndex: 0,
+              stageName: route,
+              routePattern: route,
+              actions: [],
+              invariants: { network: [] },
+            }],
+          }),
+          'utf8',
+        );
+      }
+
+      const results = emitAllIrFiles(tmp);
+
+      assert.deepEqual(
+        results.map((result) => path.basename(result.specPath)),
+        ['flow_1010101010.spec.ts', 'flow_2020202020.spec.ts'],
+      );
+      assert.equal(fs.existsSync(path.join(generatedDir, 'flow_1010101010.spec.ts')), true);
+      assert.equal(fs.existsSync(path.join(generatedDir, 'flow_2020202020.spec.ts')), true);
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
+  it('emit --all --project only re-emits the selected project', () => {
+    const tmp = createTempDir('idt-emit-all-cli-');
+    try {
+      fs.writeFileSync(
+        path.join(tmp, 'idt.config.ts'),
+        `export default { pageGlobs: ['src/views/**/*.vue'], localeFiles: [] };`,
+        'utf8',
+      );
+      for (const [project, flowId] of [
+        ['alpha', 'flow_3030303030'],
+        ['beta', 'flow_4040404040'],
+      ] as const) {
+        const root = path.join(tmp, 'apps', project);
+        const generatedDir = path.join(root, 'tests', 'e2e', 'generated');
+        fs.mkdirSync(generatedDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(root, 'package.json'),
+          JSON.stringify({ name: project, idt: { project } }),
+          'utf8',
+        );
+        fs.writeFileSync(
+          path.join(generatedDir, `${flowId}.ir.json`),
+          JSON.stringify({
+            flowId,
+            intent: `打开 ${project}`,
+            oracle: 'regression-lock',
+            description: `打开 ${project}`,
+            initialRoute: `/${project}`,
+            setup: { notes: [] },
+            unresolved: [],
+            stages: [{
+              stageIndex: 0,
+              stageName: project,
+              routePattern: `/${project}`,
+              actions: [],
+              invariants: { network: [] },
+            }],
+          }),
+          'utf8',
+        );
+      }
+      const cliPath = path.resolve(projectRoot, 'scripts/idt/cli.ts');
+      const tsxImport = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
+
+      const result = spawnSync(
+        process.execPath,
+        ['--import', tsxImport, cliPath, 'emit', '--all', '--project', 'alpha'],
+        { cwd: tmp, encoding: 'utf8' },
+      );
+
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /已重新装配 1 条 spec/);
+      assert.equal(
+        fs.existsSync(path.join(tmp, 'apps/alpha/tests/e2e/generated/flow_3030303030.spec.ts')),
+        true,
+      );
+      assert.equal(
+        fs.existsSync(path.join(tmp, 'apps/beta/tests/e2e/generated/flow_4040404040.spec.ts')),
+        false,
+      );
+
+      const missingMode = spawnSync(
+        process.execPath,
+        ['--import', tsxImport, cliPath, 'emit', '--project', 'alpha'],
+        { cwd: tmp, encoding: 'utf8' },
+      );
+      assert.equal(missingMode.status, 2);
+      assert.match(missingMode.stderr, /必须且只能选一个/);
+    } finally {
+      removeTempDir(tmp);
+    }
   });
 
   it('JSON-escapes quotes and backslashes in a text routeGuard ready name', () => {

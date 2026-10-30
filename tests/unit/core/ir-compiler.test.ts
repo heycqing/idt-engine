@@ -569,6 +569,7 @@ describe('ir-compiler', () => {
     assert.match(IR_SYSTEM_PROMPT, /readyRole and readyName are under the SAME rule/);
     assert.match(IR_SYSTEM_PROMPT, /omit readyRole and readyName entirely/);
     assert.match(IR_SYSTEM_PROMPT, /deferred.*must not.*routeGuard readyRole/i);
+    assert.match(IR_SYSTEM_PROMPT, /dataScoped.*must not.*routeGuard readyRole/i);
     assert.equal(
       IR_SYSTEM_PROMPT.includes('never use it for routeGuard readyRole'),
       false,
@@ -622,6 +623,59 @@ describe('ir-compiler', () => {
 
       assert.deepEqual(ir.stages[0].invariants.routeGuard, {
         targetUrlPattern: '/login',
+      });
+    } finally {
+      removeTempDir(tmp);
+    }
+  });
+
+  it('removes a data-scoped ready element even when the model ignores the prompt rule', async () => {
+    const tmp = createTempDir();
+    try {
+      writeFile(
+        tmp,
+        'idt.config.ts',
+        `export default { pageGlobs: ['src/views/**/*.vue'], localeFiles: [] };`,
+      );
+      writeFile(
+        tmp,
+        'src/views/trade/index.vue',
+        `<template><template #op="row"><button>买入</button></template></template>`,
+      );
+      const model: ModelClient = {
+        async complete() {
+          return JSON.stringify({
+            description: '交易页可打开',
+            initialRoute: '/trade',
+            setup: { notes: [] },
+            unresolved: [],
+            stages: [{
+              stageIndex: 0,
+              stageName: '交易页',
+              routePattern: '/trade',
+              actions: [],
+              invariants: {
+                network: [],
+                routeGuard: {
+                  targetUrlPattern: '/trade',
+                  readyRole: 'button',
+                  readyName: '买入',
+                },
+              },
+            }],
+          });
+        },
+      };
+
+      const ir = await compileIntent({
+        projectRoot: tmp,
+        intent: '打开交易页',
+        route: '/trade',
+        model,
+      });
+
+      assert.deepEqual(ir.stages[0].invariants.routeGuard, {
+        targetUrlPattern: '/trade',
       });
     } finally {
       removeTempDir(tmp);

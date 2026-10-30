@@ -237,4 +237,72 @@ describe('vue sfc', () => {
       { role: 'button', name: '默认容器按钮' },
     ]);
   });
+
+  it('marks elements in both scoped-slot syntaxes as data scoped', () => {
+    const scan = scanVueTemplate(`
+      <div>
+        <template #op="row"><button>买入</button></template>
+        <template v-slot:actions="item"><button>创建条件单</button></template>
+      </div>
+    `);
+
+    assert.deepEqual(scan.elements, [
+      { role: 'button', name: '买入', dataScoped: true },
+      { role: 'button', name: '创建条件单', dataScoped: true },
+    ]);
+  });
+
+  it('marks the v-for element and its descendants as data scoped', () => {
+    const scan = scanVueTemplate(`
+      <section v-for="row in rows">
+        <button>查看</button>
+        <div><button>删除</button></div>
+      </section>
+      <button v-for="item in actions">执行</button>
+    `);
+
+    assert.deepEqual(scan.elements, [
+      { role: 'button', name: '查看', dataScoped: true },
+      { role: 'button', name: '删除', dataScoped: true },
+      { role: 'button', name: '执行', dataScoped: true },
+    ]);
+  });
+
+  it('does not mark elements outside a scoped slot', () => {
+    const scan = scanVueTemplate(`
+      <div><button>页面按钮</button></div>
+      <template #op="row"><button>逐行按钮</button></template>
+    `);
+
+    assert.deepEqual(scan.elements, [
+      { role: 'button', name: '页面按钮' },
+      { role: 'button', name: '逐行按钮', dataScoped: true },
+    ]);
+  });
+
+  it('keeps data scope through nested tags and preserves independent deferred meaning', () => {
+    const scan = scanVueTemplate(`
+      <template #op="row">
+        <section><van-popup><div><button>嵌套按钮</button></div></van-popup></section>
+      </template>
+    `);
+
+    assert.deepEqual(scan.elements, [
+      { role: 'button', name: '嵌套按钮', deferred: true, dataScoped: true },
+    ]);
+  });
+
+  it('does not leak data scope past the closing slot template', () => {
+    const scan = scanVueTemplate(`
+      <div>
+        <template #op="row"><button>逐行按钮</button></template>
+        <button>闭合后的按钮</button>
+      </div>
+    `);
+
+    assert.deepEqual(scan.elements, [
+      { role: 'button', name: '逐行按钮', dataScoped: true },
+      { role: 'button', name: '闭合后的按钮' },
+    ]);
+  });
 });

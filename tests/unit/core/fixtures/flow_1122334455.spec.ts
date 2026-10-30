@@ -10,7 +10,7 @@ test("选择快递", async ({ page }) => {
       res.url().includes("/api/shipping") && res.request().method() === "PUT",
       { timeout: 3000 },
     ),
-    page.getByRole("combobox", { name: "配送方式" }).selectOption("快递", { timeout: 3000 }),
+    page.getByRole("combobox", { name: "配送方式", exact: true }).selectOption("快递", { timeout: 3000 }),
   ]);
   expect(response0.status()).toBe(204);
 });

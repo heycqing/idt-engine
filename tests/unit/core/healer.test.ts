@@ -52,7 +52,7 @@ function setupFixture(dir: string) {
   const lines = specContent.split(/\r?\n/);
   const failureLine =
     lines.findIndex((l) =>
-      l.includes('getByRole("button", { name: "确认去结算订单" })'),
+      l.includes('getByRole("button", { name: "确认去结算订单", exact: true })'),
     ) + 1;
 
   return { ir, irPath, specPath, irContent, specContent, failureLine };
