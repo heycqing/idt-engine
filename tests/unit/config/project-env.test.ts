@@ -9,6 +9,7 @@ import {
   IdtProjectEnvError,
   findIdtProjectRoot,
   loadIdtProjectEnv,
+  midsceneModelConfig,
   parseEnvFile,
   requireModelCredentials,
 } from '../../../src/idt/config/project-env.js';
@@ -69,6 +70,28 @@ describe('project env', () => {
       assert.equal(env.openAiApiKey, 'project-key');
       assert.equal(env.openAiBaseUrl, 'https://example.com/v1');
       assert.equal(env.modelName, 'example-model');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('loads a separate Midscene model family without exposing values in logs', () => {
+    const root = tempDir();
+    try {
+      writeConfig(root);
+      fs.writeFileSync(
+        path.join(root, IDT_ENV_FILE),
+        'OPENAI_API_KEY=provider-key\nOPENAI_BASE_URL=https://model.example/v1\nIDT_MODEL_NAME=idt-text-model\nMIDSCENE_MODEL_NAME=vision-model\nMIDSCENE_MODEL_FAMILY=gpt-6\n',
+        'utf8',
+      );
+      const env = loadIdtProjectEnv(root, {});
+      assert.equal(env.midsceneModelFamily, 'gpt-6');
+      assert.deepEqual(midsceneModelConfig(env), {
+        MIDSCENE_MODEL_API_KEY: 'provider-key',
+        MIDSCENE_MODEL_BASE_URL: 'https://model.example/v1',
+        MIDSCENE_MODEL_NAME: 'vision-model',
+        MIDSCENE_MODEL_FAMILY: 'gpt-6',
+      });
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

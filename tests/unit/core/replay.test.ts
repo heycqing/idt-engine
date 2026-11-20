@@ -184,7 +184,7 @@ describe('replay', () => {
     assert.deepEqual(mockPage.calls, [
       'goto:/step1',
       'click:button:next:3500',
-      'waitForURL:^/step2$:3500',
+      'waitForURL:^https?://[^/?#]+(?:/step2)(?:\\?.*)?(?:#.*)?$:3500',
       'ariaSnapshot',
     ]);
     assert.ok(!mockPage.calls.includes('click:button:finish:4000'));
@@ -226,9 +226,9 @@ describe('replay', () => {
 
     assert.deepEqual(mockPage.calls, [
       'goto:/step1',
-      'waitForURL:^/step2$:5000',
+      'waitForURL:^https?://[^/?#]+(?:/step2)(?:\\?.*)?(?:#.*)?$:5000',
       'waitForVisible:text:第二步:5000',
-      'waitForURL:^/done$:5000',
+      'waitForURL:^https?://[^/?#]+(?:/done)(?:\\?.*)?(?:#.*)?$:5000',
       'ariaSnapshot',
     ]);
   });

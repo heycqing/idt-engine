@@ -5,7 +5,7 @@ import {
   toGuardPattern,
   type RouterUrlOptions,
 } from './route-url.js';
-import { chromium } from '@playwright/test';
+import { resolvePlaywrightRuntime } from './playwright-runtime.js';
 import type { StateTransitionIR } from './ir-schema.js';
 import { findTriggerActionIndex } from './action-order.js';
 import {
@@ -138,6 +138,7 @@ export async function launchChromiumReplay<T>(
   run: (page: ReplayPage) => Promise<T>,
   defaultBaseUrl: string | undefined = 'http://127.0.0.1:3000',
 ): Promise<T> {
+  const { chromium } = resolvePlaywrightRuntime(projectRoot);
   const browser = await chromium.launch({ headless: true });
   try {
     const baseURL = process.env.IDT_BASE_URL || defaultBaseUrl || 'http://127.0.0.1:3000';

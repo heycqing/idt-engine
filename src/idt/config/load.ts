@@ -18,6 +18,7 @@ export const DEFAULT_IDT_CONFIG: IdtConfig = {
   localeFiles: ['src/locales/zh-CN.json', 'locales/zh-CN.json'],
   routerGlobs: [],
   deferredContainers: DEFAULT_DEFERRED_CONTAINERS,
+  verifyWarningExceptions: [],
 };
 
 export class IdtConfigError extends Error {

@@ -5,7 +5,10 @@ export const IDT_CONFIG_FILE = 'idt.config.ts';
 export const IDT_ENV_FILE = '.env.idt.local';
 export const IDT_ENV_EXAMPLE_FILE = '.env.idt.example';
 
-const RECOGNIZED_KEYS = ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'IDT_MODEL_NAME'] as const;
+const RECOGNIZED_KEYS = [
+  'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'IDT_MODEL_NAME',
+  'MIDSCENE_MODEL_API_KEY', 'MIDSCENE_MODEL_BASE_URL', 'MIDSCENE_MODEL_NAME', 'MIDSCENE_MODEL_FAMILY',
+] as const;
 const RECOGNIZED = new Set<string>(RECOGNIZED_KEYS);
 
 export class IdtProjectEnvError extends Error {
@@ -22,6 +25,10 @@ export interface IdtProjectEnv {
   openAiApiKey: string;
   openAiBaseUrl?: string;
   modelName?: string;
+  midsceneModelApiKey?: string;
+  midsceneModelBaseUrl?: string;
+  midsceneModelName?: string;
+  midsceneModelFamily?: string;
 }
 
 export interface IdtModelCredentials {
@@ -102,6 +109,10 @@ export function loadIdtProjectEnv(
   const openAiApiKey = pick('OPENAI_API_KEY');
   const openAiBaseUrl = pick('OPENAI_BASE_URL');
   const modelName = pick('IDT_MODEL_NAME');
+  const midsceneModelApiKey = pick('MIDSCENE_MODEL_API_KEY');
+  const midsceneModelBaseUrl = pick('MIDSCENE_MODEL_BASE_URL');
+  const midsceneModelName = pick('MIDSCENE_MODEL_NAME');
+  const midsceneModelFamily = pick('MIDSCENE_MODEL_FAMILY');
 
   return {
     projectRoot,
@@ -109,7 +120,24 @@ export function loadIdtProjectEnv(
     openAiApiKey: openAiApiKey ?? '',
     openAiBaseUrl,
     modelName,
+    midsceneModelApiKey,
+    midsceneModelBaseUrl,
+    midsceneModelName,
+    midsceneModelFamily,
   };
+}
+
+/** Build Midscene config without logging or mutating process.env. */
+export function midsceneModelConfig(env: IdtProjectEnv): Record<string, string> {
+  const config: Record<string, string> = {};
+  const apiKey = env.midsceneModelApiKey || env.openAiApiKey;
+  const baseUrl = env.midsceneModelBaseUrl || env.openAiBaseUrl;
+  const modelName = env.midsceneModelName;
+  if (apiKey) config.MIDSCENE_MODEL_API_KEY = apiKey;
+  if (baseUrl) config.MIDSCENE_MODEL_BASE_URL = baseUrl;
+  if (modelName) config.MIDSCENE_MODEL_NAME = modelName;
+  if (env.midsceneModelFamily) config.MIDSCENE_MODEL_FAMILY = env.midsceneModelFamily;
+  return config;
 }
 
 /** gen 才需要密钥。错误信息只提文件名，不带任何配置值。 */

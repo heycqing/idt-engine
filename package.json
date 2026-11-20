@@ -5,6 +5,8 @@
   "scripts": {
     "idt": "tsx scripts/idt/cli.ts gen",
     "idt:emit": "tsx scripts/idt/cli.ts emit",
+    "idt:observe": "tsx scripts/idt/cli.ts observe",
+    "idt:promote": "tsx scripts/idt/cli.ts promote",
     "idt:heal": "tsx scripts/idt/cli.ts heal",
     "idt:probe": "tsx scripts/idt/cli.ts probe",
     "idt:sync": "tsx scripts/idt/cli.ts sync",

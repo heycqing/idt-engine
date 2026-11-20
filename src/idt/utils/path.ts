@@ -38,7 +38,7 @@ export function segmentsMatch(pattern: string, concrete: string): boolean {
   const a = pattern.split('/').filter(Boolean);
   const b = concrete.split('/').filter(Boolean);
   if (a.length !== b.length) return false;
-  return a.every((seg, i) => seg.startsWith(':') || seg === b[i]);
+  return a.every((seg, i) => seg.startsWith(':') || seg.toLowerCase() === b[i].toLowerCase());
 }
 
 export function extractDynamicParams(routePattern: string): string[] {

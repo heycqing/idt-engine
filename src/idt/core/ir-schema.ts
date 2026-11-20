@@ -52,6 +52,7 @@ export const ActionSchema = z.object({
 export const NetworkInvariantSchema = z.object({
   method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']),
   urlPattern: z.string().min(1).max(200),
+  exactUrl: z.string().url().max(200).optional(),
   expectedStatus: z.number().int().min(100).max(599).default(200),
   responseType: z.enum(['json', 'none']).default('json'),
   assertResponseFields: z

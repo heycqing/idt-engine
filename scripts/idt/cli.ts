@@ -6,6 +6,7 @@ import { loadIdtConfig } from '../../src/idt/config/load.js';
 import {
   IDT_ENV_FILE,
   loadIdtProjectEnv,
+  midsceneModelConfig,
   requireModelCredentials,
 } from '../../src/idt/config/project-env.js';
 import {
@@ -24,6 +25,7 @@ import { OpenAiClient } from '../../src/idt/core/openai-client.js';
 import { emitAllIrFiles, emitIrFile, emitSpec } from '../../src/idt/core/emitter.js';
 import { heal } from '../../src/idt/core/healer.js';
 import { formatHitMismatchWarning, probe } from '../../src/idt/core/prober.js';
+import { promote } from '../../src/idt/core/promoter.js';
 import { playwrightCliEntry } from '../../src/idt/core/runner.js';
 import {
   normalizeBatchExcludes,
@@ -36,6 +38,7 @@ import {
   type VerifyCase,
   type VerifyFinding,
 } from '../../src/idt/core/verify.js';
+import { partitionVerifyFindings } from '../../src/idt/core/verify-exceptions.js';
 import { computeInputsDigest } from '../../src/idt/extract/inputs-digest.js';
 import {
   StateTransitionIRSchema,
@@ -71,6 +74,7 @@ function extractOptions(project: IdtProject) {
       routerGlobs: project.routerGlobs,
       localeFiles: project.localeFiles,
       deferredContainers: project.deferredContainers,
+      verifyWarningExceptions: [],
     },
     projectName: project.implicit ? undefined : project.name,
     routerQuery: project.urlQuery,
@@ -286,10 +290,10 @@ program
   .command('verify')
   .description('Verify generated specs against current source topology')
   .option('--project <name>', 'Only verify this project')
-  .option('--strict', 'Treat warnings as failures')
+  .option('--strict', 'Treat unexempted warnings as failures')
   .action((options: { project?: string; strict?: boolean }) => {
     try {
-      const { projects } = workspace();
+      const { projects, config } = workspace();
       const targets = options.project ? [pick(projects, options.project)] : projects;
 
       // 全部项目先过配置门槛，避免输出半份报告后才以配置错误退出。
@@ -304,6 +308,7 @@ program
 
       let errorCount = 0;
       let warningCount = 0;
+      let exemptedWarningCount = 0;
       let caseCount = 0;
 
       for (const project of targets) {
@@ -399,10 +404,14 @@ program
           });
         }
 
-        const errors = findings.filter((item) => item.level === 'error');
-        const warnings = findings.filter((item) => item.level === 'warning');
+        const { errors, warnings, exemptedWarnings } = partitionVerifyFindings(
+          project.name,
+          findings,
+          config.verifyWarningExceptions,
+        );
         errorCount += errors.length;
         warningCount += warnings.length;
+        exemptedWarningCount += exemptedWarnings.length;
 
         console.log(`项目 ${project.name}`);
         console.log('错误：');
@@ -411,10 +420,15 @@ program
         console.log('警告：');
         if (warnings.length === 0) console.log('  无');
         for (const item of warnings) console.log(`  [${item.flowId}] ${item.message}`);
+        console.log('豁免警告：');
+        if (exemptedWarnings.length === 0) console.log('  无');
+        for (const { finding, exception } of exemptedWarnings) {
+          console.log(`  [${finding.flowId}] ${finding.message}（豁免原因：${exception.reason}）`);
+        }
         console.log();
       }
 
-      console.log(`${errorCount} 个错误，${warningCount} 个警告，共 ${caseCount} 条用例`);
+      console.log(`${errorCount} 个错误，${warningCount} 个警告，共 ${caseCount} 条用例；${exemptedWarningCount} 个豁免警告`);
       process.exit(errorCount > 0 || (options.strict && warningCount > 0) ? 1 : 0);
     } catch (err: any) {
       fail(err);
@@ -513,6 +527,111 @@ program
         console.error(formatHitMismatchWarning(result.hitMismatch));
       }
       process.exit(result.exitCode);
+    } catch (err: any) {
+      const exitCode = typeof err?.exitCode === 'number' ? err.exitCode : 2;
+      console.error(err?.message ?? String(err));
+      process.exit(exitCode);
+    }
+  });
+
+program
+  .command('observe <intent>')
+  .description('Use Midscene to observe a business interaction and write an IDT candidate')
+  .requiredOption('--route <path>', 'Initial route to observe')
+  .option('--project <name>', 'IDT project to observe')
+  .option('--allow-click <role:name>', 'Exact safe click target; repeat for multiple targets', (value: string, previous: string[] = []) => [...previous, value], [])
+  .option('--allow-get <url>', 'Exact non-sensitive read-only GET URL; repeat only for confirmed safe endpoints', (value: string, previous: string[] = []) => [...previous, value], [])
+  .option('--headed', 'Show the Chromium browser')
+  .option('--include-report', 'Write a local Midscene HTML report; it may contain page content')
+  .option('--timeout <ms>', 'Timeout for Midscene agent in milliseconds (default: 60000)', (value: string) => parseInt(value, 10))
+  .option('--output <dir>', 'Output root inside the project .idt/observations directory')
+  .action(async (intent: string, options: {
+    route: string;
+    project?: string;
+    allowClick?: string[];
+    allowGet?: string[];
+    headed?: boolean;
+    includeReport?: boolean;
+    timeout?: number;
+    output?: string;
+  }) => {
+    try {
+      const { env, projects } = workspace();
+      const project = pick(projects, options.project);
+      const topologyPath = path.resolve(project.root, '.idt', 'topology.json');
+      if (!fs.existsSync(topologyPath)) {
+        throw Object.assign(new Error('还没有拓扑，先执行 idt:sync'), { exitCode: 2 });
+      }
+      const topology = JSON.parse(fs.readFileSync(topologyPath, 'utf8'));
+      // Load observer only for this command; sync/verify/emit/test do not load the Midscene adapter.
+      const { observe } = await import('../../src/idt/core/observer.js');
+      const allowedActions = (options.allowClick ?? []).map((value) => {
+        const separator = value.indexOf(':');
+        if (separator <= 0 || separator === value.length - 1) {
+          throw Object.assign(new Error('--allow-click must use role:name'), { exitCode: 2 });
+        }
+        return {
+          route: options.route,
+          role: value.slice(0, separator),
+          name: value.slice(separator + 1),
+        };
+      });
+      const result = await observe({
+        projectRoot: project.root,
+        project,
+        route: options.route,
+        allowedActions,
+        networkAllowlist: (options.allowGet ?? []).map((url) => ({ method: 'GET' as const, url })),
+        intent,
+        baseUrl: projectBaseUrl(project),
+        topology,
+        router: readRouterOptions(project.root),
+        headed: options.headed,
+        includeReport: options.includeReport,
+        timeoutMs: options.timeout,
+        midsceneModelConfig: midsceneModelConfig(env),
+        outputRoot: options.output ? path.resolve(process.cwd(), options.output) : undefined,
+      });
+      console.log(`观察完成：${result.outputDir}`);
+      console.log(`候选 IDT 用例：${result.candidate.flowId}`);
+      if (result.unresolved.length > 0) {
+        console.log(`未解决项 ${result.unresolved.length} 条；候选不能晋升：`);
+        for (const item of result.unresolved) console.log(`  - ${item}`);
+      } else {
+        console.log(`候选已通过静态编译；审阅后用 idt:promote 显式晋升。`);
+      }
+      process.exit(0);
+    } catch (err: any) {
+      const exitCode = typeof err?.exitCode === 'number' ? err.exitCode : 2;
+      console.error(err?.message ?? String(err));
+      process.exit(exitCode);
+    }
+  });
+
+program
+  .command('promote <candidate>')
+  .description('Validate and atomically promote an explicitly reviewed IDT candidate')
+  .option('--project <name>', 'IDT project that owns the candidate')
+  .action(async (candidate: string, options: { project?: string }) => {
+    try {
+      const { projects } = workspace();
+      const project = pick(projects, options.project);
+      const topologyPath = path.resolve(project.root, '.idt', 'topology.json');
+      if (!fs.existsSync(topologyPath)) {
+        throw Object.assign(new Error('还没有拓扑，先执行 idt:sync'), { exitCode: 2 });
+      }
+      const topology = JSON.parse(fs.readFileSync(topologyPath, 'utf8'));
+      const result = await promote({
+        projectRoot: project.root,
+        project,
+        candidatePath: path.resolve(process.cwd(), candidate),
+        topology,
+        router: readRouterOptions(project.root),
+      });
+      console.log(`已晋升 ${result.flowId}`);
+      console.log(`IR: ${path.relative(project.root, result.irPath)}`);
+      console.log(`spec: ${path.relative(project.root, result.specPath)}`);
+      process.exit(0);
     } catch (err: any) {
       const exitCode = typeof err?.exitCode === 'number' ? err.exitCode : 2;
       console.error(err?.message ?? String(err));

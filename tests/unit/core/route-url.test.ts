@@ -12,6 +12,29 @@ const history = { mode: 'history' as const };
 const hash = { mode: 'hash' as const };
 
 describe('route url', () => {
+  it('anchors exact application-route patterns at the router base while allowing destination query and fragment tails', () => {
+    for (const mode of ['hash', 'history'] as const) {
+      for (const base of ['/', '/one/', '/another/']) {
+        const pattern = new RegExp(toGuardPattern('^/next$', { mode, base }));
+        const routePrefix = `https://fixture.test${base}${mode === 'hash' ? '#/' : ''}`;
+        assert.equal(pattern.test(`${routePrefix}next`), true);
+        assert.equal(pattern.test(`${routePrefix}next?id=1#section`), true);
+        assert.equal(pattern.test(`${routePrefix}foo/next`), false);
+        assert.equal(pattern.test(`${routePrefix}next-more`), false);
+        assert.equal(pattern.test(`${routePrefix}next/child`), false);
+      }
+    }
+  });
+
+  it('groups alternation inside an exact application-route URL boundary', () => {
+    const pattern = new RegExp(toGuardPattern('^/next|/done$', history));
+
+    assert.equal(pattern.test('http://fixture.test/next'), true);
+    assert.equal(pattern.test('http://fixture.test/done'), true);
+    assert.equal(pattern.test('http://fixture.test/next-more'), false);
+    assert.equal(pattern.test('http://fixture.test/foo/done'), false);
+  });
+
   it('leaves history routes untouched', () => {
     assert.equal(toBrowserUrl('/credit/amount', history), '/credit/amount');
     assert.equal(toBrowserUrl('/', history), '/');
@@ -107,15 +130,13 @@ describe('route url', () => {
   });
 
   it('relaxes a trailing anchor in the guard pattern when a query is configured', () => {
-    // 带查询串之后 URL 不再以路径结尾，/checkout$ 这种锚点会匹配不上
-    assert.equal(
-      toGuardPattern('/checkout$', { mode: 'hash', query: { channel: 'cdgst' } }),
-      '#/checkout(\?.*)?$',
-    );
-    assert.equal(
-      toGuardPattern('/checkout$', { mode: 'history', query: { channel: 'cdgst' } }),
-      '/checkout(\?.*)?$',
-    );
+    for (const mode of ['hash', 'history'] as const) {
+      const pattern = new RegExp(toGuardPattern('/checkout$', { mode, query: { channel: 'cdgst' } }));
+      const prefix = mode === 'hash' ? 'http://fixture.test/#' : 'http://fixture.test';
+      assert.equal(pattern.test(`${prefix}/checkout?channel=cdgst`), true);
+      assert.equal(pattern.test(`${prefix}/checkout`), true);
+      assert.equal(pattern.test(`${prefix}/checkout-other?channel=cdgst`), false);
+    }
     // 没有查询串时保持原样
     assert.equal(toGuardPattern('/checkout$', { mode: 'hash' }), '#/checkout$');
   });

@@ -37,6 +37,8 @@ describe('link-host', () => {
     assert.equal(rel.includes('\\'), false);
   assert.match(desiredScripts('./idt-engine')['idt:sync'], /tsx \.\/idt-engine\/scripts\/idt\/cli\.ts sync/);
   assert.match(desiredScripts('./idt-engine')['idt:probe'], /tsx \.\/idt-engine\/scripts\/idt\/cli\.ts probe/);
+  assert.match(desiredScripts('./idt-engine')['idt:observe'], /tsx \.\/idt-engine\/scripts\/idt\/cli\.ts observe/);
+  assert.match(desiredScripts('./idt-engine')['idt:promote'], /tsx \.\/idt-engine\/scripts\/idt\/cli\.ts promote/);
   });
 
   it('appends gitignore entries once, including the project key file', () => {

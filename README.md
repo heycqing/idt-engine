@@ -112,6 +112,29 @@ apps/yuekai/.idt/...
 
 `pnpm idt:projects` 列出发现到的项目和它们的 globs。
 
+`pnpm idt:observe "查看条件单详情" --project caida --route /plan/aiznwgIntro --allow-click text:查看详情`
+会连接已有的本地/测试服务，由 Midscene 探索交互，并将 IDT 自有 observation 与 candidate IR
+写入 `apps/caida/.idt/observations/`。这一步不改活动生成集；候选包含 unresolved 时不能晋升。
+每次观察会生成 IDT 自有的脱敏 `report.html`，只展示动作、目标、URL 和 unresolved；不写入 Midscene 原始参数或模型总结。
+点击必须列入精确的 `--allow-click <role:name>` 清单；输入、金融操作、无法辨认的目标和网络写请求会被拒绝或标为未解决。
+XHR/fetch GET 默认全部阻断；只有对确认安全的完整 URL 显式使用 `--allow-get <url>` 才会放行。
+Midscene HTML 报告默认关闭；`--include-report` 会在本地保存可能含页面内容的报告，不应直接分享。
+
+候选晋升前先审阅 candidate IR，再显式运行：
+
+```bash
+pnpm idt:promote apps/caida/.idt/observations/caida/<run-id>/candidate.ir.json --project caida
+```
+
+`idt:promote` 会重验当前拓扑、exact locator 和证据规则，再从同一份 IR 原子写入活动 IR/spec；
+它不调用 Midscene，也不会覆盖已有活动 flow。
+
+Midscene 模型配置可写入就近 `.env.idt.local`：优先使用 `MIDSCENE_MODEL_API_KEY`、
+`MIDSCENE_MODEL_BASE_URL`、`MIDSCENE_MODEL_NAME` 和必需的 `MIDSCENE_MODEL_FAMILY`。
+未单独设置 API key/base URL 时，会复用现有 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL`；
+Midscene 模型名必须单独配置，避免把 IDT 的文本生成模型误当作视觉模型。
+Family 必须与所选视觉模型兼容；IDT 不会猜测模型族，也不会打印这些配置。
+
 `idt:batch` 按路由遍历生成，跳过意图匹配，只挑至少有一个确定名字元素的路由。
 宿主对某类路由有准入限制时用 `--exclude` 排掉，省下无谓的模型调用。
 
@@ -120,7 +143,24 @@ spec 漂移、IR 是否合 schema、未解决项、失效路由、缺失元素�
 把 overlay 后代误作就绪元素的 `deferred-ready-assertion`，以及只有 URL 断言的弱用例。
 拓扑相对源文件已陈旧时会报 `stale-topology` 错误——
 开发期的惯用法是 `pnpm idt:sync && pnpm idt:verify`。它不调用模型、不启动浏览器，
-也不访问网络；`--strict` 会把警告也视为失败。
+也不访问网络；`--strict` 会把未豁免的警告也视为失败。
+
+确需保留的 `weak-assertion` 警告可以在根 `idt.config.ts` 登记：
+
+```ts
+verifyWarningExceptions: [{
+  project: 'kaiyuan',
+  flowId: 'flow_8e321313ee',
+  code: 'weak-assertion',
+  reason: 'M3 negative control',
+}],
+```
+
+匹配要求 `project`、`flowId`、`code` 三项完全相同，不支持通配符。
+单项目模式的项目名是根目录名，可通过 `pnpm idt:projects` 查看。
+目前只有 `weak-assertion` 警告可豁免，错误始终导致失败。
+`reason` 必须非空，会随原警告显示在「豁免警告」部分，并单独计数；
+严格模式只忽略这些精确匹配的警告，其他警告仍导致失败。
 
 其中 `tautological-guard` 值得单独说：需求文档原则 3 要求点击、勾选、选择必须
 绑到一条网络契约或一条路由守卫，但一条 `targetUrlPattern` 指向动作自己所在那页

@@ -12,12 +12,18 @@ import type { StateTransitionIR } from '../../../src/idt/core/ir-schema.js';
 const cliPath = path.resolve('scripts/idt/cli.ts');
 const tsxImport = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
 
-function withProject(run: (root: string) => void): void {
+function withProject(
+  run: (root: string) => void,
+  config: (root: string) => Record<string, unknown> = () => ({}),
+): void {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'idt-verify-cli-'));
   try {
     fs.writeFileSync(
       path.join(root, 'idt.config.ts'),
-      "export default { pageGlobs: ['src/pages/**/*.tsx'], routerGlobs: [], localeFiles: [] };",
+      `export default ${JSON.stringify({
+        pageGlobs: ['src/pages/**/*.tsx'], routerGlobs: [], localeFiles: [],
+        ...config(root),
+      })};`,
       'utf8',
     );
     run(root);
@@ -55,7 +61,79 @@ function writeTopology(
   );
 }
 
+function writeWeakCase(root: string): void {
+  const generated = path.join(root, 'tests', 'e2e', 'generated');
+  fs.mkdirSync(generated, { recursive: true });
+  const ir: StateTransitionIR = {
+    flowId: 'flow_aabbccddee',
+    intent: '打开首页',
+    oracle: 'regression-lock',
+    description: '首页 URL 正确',
+    initialRoute: '/home',
+    setup: { notes: [] },
+    unresolved: [],
+    stages: [{
+      stageIndex: 0,
+      stageName: '首页',
+      routePattern: '/home',
+      actions: [],
+      invariants: { network: [], routeGuard: { targetUrlPattern: '/home' } },
+    }],
+  };
+  fs.writeFileSync(path.join(generated, `${ir.flowId}.ir.json`), JSON.stringify(ir), 'utf8');
+  fs.writeFileSync(path.join(generated, `${ir.flowId}.spec.ts`), emitSpec(ir), 'utf8');
+}
+
+const warningException = (project: string) => ({
+  project,
+  flowId: 'flow_aabbccddee',
+  code: 'weak-assertion',
+  reason: 'M3 negative control',
+});
+
 describe('idt verify CLI', () => {
+  it('allows an exact project warning exception in strict mode and prints its reason', () => {
+    withProject((root) => {
+      writeTopology(root);
+      writeWeakCase(root);
+
+      const strict = runVerify(root, '--strict');
+
+      assert.equal(strict.status, 0, strict.stderr || strict.stdout);
+      assert.match(strict.stdout, /豁免警告/);
+      assert.match(strict.stdout, /M3 negative control/);
+      assert.match(strict.stdout, /0 个错误，0 个警告，共 1 条用例/);
+      assert.match(strict.stdout, /1 个豁免警告/);
+    }, (root) => ({ verifyWarningExceptions: [warningException(path.basename(root))] }));
+  });
+
+  it('keeps strict verification failing when the exception belongs to another project', () => {
+    withProject((root) => {
+      writeTopology(root);
+      writeWeakCase(root);
+
+      const strict = runVerify(root, '--strict');
+
+      assert.equal(strict.status, 1, strict.stderr);
+      assert.match(strict.stdout, /0 个错误，1 个警告，共 1 条用例/);
+      assert.doesNotMatch(strict.stdout, /M3 negative control/);
+    }, () => ({ verifyWarningExceptions: [warningException('other')] }));
+  });
+
+  it('keeps errors failing when a warning is exempted', () => {
+    withProject((root) => {
+      writeTopology(root);
+      writeWeakCase(root);
+      fs.writeFileSync(path.join(root, 'tests/e2e/generated/orphan.spec.ts'), '// orphan', 'utf8');
+
+      const strict = runVerify(root, '--strict');
+
+      assert.equal(strict.status, 1, strict.stderr);
+      assert.match(strict.stdout, /1 个错误，0 个警告，共 1 条用例/);
+      assert.match(strict.stdout, /M3 negative control/);
+    }, (root) => ({ verifyWarningExceptions: [warningException(path.basename(root))] }));
+  });
+
   it('returns exit code 2 when the topology is missing', () => {
     withProject((root) => {
       const result = runVerify(root);

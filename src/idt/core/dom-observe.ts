@@ -88,10 +88,101 @@ export function hitProbeScript(): string {
 ${CSS_PATH_SOURCE}
     document.addEventListener('click', (event) => {
       if (event.target instanceof Element) {
-        window.__idt_hit = uniquePath(event.target);
+        const hit = uniquePath(event.target);
+        window.__idt_hit = hit;
+        if (hit) console.debug('__IDT_HIT__' + hit);
       }
     }, true);
     window.__idt_hit_installed = true;
+  })()`;
+}
+
+export interface ActionTargetAllowance {
+  route: string;
+  role: string;
+  name: string;
+}
+
+/** Only explicitly allowlisted semantic targets can receive a click/keyboard activation. */
+export function actionGuardScript(
+  allowedActions: ActionTargetAllowance[] = [],
+  router: { mode: 'hash' | 'history'; base?: string } = { mode: 'history', base: '/' },
+): string {
+  const policy = JSON.stringify({ allowedActions, router });
+  return `(() => {
+    if (window.__idt_action_guard_installed) return;
+    const policy = ${policy};
+    const risky = /买入|卖出|买|卖|下单|交易|撤单|撤销|转账|划转|充值|提现|申购|认购|融资|还款|签约|注销|支付|提交|确认|确定|取消|删除|清空|重置|保存|密码|验证码|委托|订单|购买|account|transfer|trade|submit|payment|confirm|cancel|buy|sell|order|withdraw|delete|remove|save|reset/i;
+    const stop = (event, info) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      window.__idt_blocked_action = true;
+      window.__idt_blocked_action_info = info || { type: 'action_guard_rejected' };
+    };
+    const route = () => {
+      const base = policy.router.base || '/';
+      const normalizedBase = base.startsWith('/') ? base : '/' + base;
+      const basePath = normalizedBase.endsWith('/') ? normalizedBase : normalizedBase + '/';
+      if (policy.router.mode === 'hash') {
+        if (location.pathname !== basePath) return '';
+        const path = location.hash.slice(1).split(/[?#]/, 1)[0];
+        return path.startsWith('/') ? path : '';
+      }
+      if (!location.pathname.startsWith(basePath)) return '';
+      return '/' + location.pathname.slice(basePath.length);
+    };
+    const semanticTarget = (element) => {
+      const target = element.closest('button,a,[role],[tabindex],input,select,textarea') || element;
+      const tag = target.tagName?.toLowerCase();
+      const inputType = target.getAttribute?.('type')?.toLowerCase();
+      const inferred = target.getAttribute?.('role') || ({
+        a: 'link', button: 'button', select: 'combobox',
+        input: inputType === 'checkbox' ? 'checkbox' : inputType === 'radio' ? 'radio' : 'textbox',
+      }[tag] || 'text');
+      const name = (target.getAttribute?.('aria-label') || target.getAttribute?.('placeholder')
+        || target.getAttribute?.('title') || target.getAttribute?.('alt') || target.value || target.innerText || '')
+        .replace(/\\s+/g, ' ').trim();
+      return { target, role: inferred, name };
+    };
+    const isAllowed = (element) => {
+      const semantic = semanticTarget(element);
+      if (!semantic.name || risky.test(semantic.name)) return false;
+      return policy.allowedActions.some((allowed) =>
+        allowed.route === route() && allowed.role === semantic.role && allowed.name === semantic.name,
+      );
+    };
+    const guardActivation = (event) => {
+      const element = event.target instanceof Element
+        ? event.target
+        : event.target && event.target.parentElement instanceof Element ? event.target.parentElement : null;
+      if (!element || !isAllowed(element)) {
+        const semantic = element ? semanticTarget(element) : null;
+        stop(event, {
+          type: 'action_guard_rejected',
+          role: semantic ? semantic.role : undefined,
+          name: semantic ? semantic.name : undefined,
+        });
+      }
+    };
+    document.addEventListener('click', guardActivation, true);
+    document.addEventListener('submit', (e) => stop(e, { type: 'action_guard_rejected', reason: 'submit' }), true);
+    document.addEventListener('change', (e) => stop(e, { type: 'action_guard_rejected', reason: 'change' }), true);
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      guardActivation(event);
+    }, true);
+    window.__idt_action_guard_installed = true;
+  })()`;
+}
+
+export function readBlockedActionScript(): string {
+  return `(() => {
+    const blocked = window.__idt_blocked_action === true;
+    const info = window.__idt_blocked_action_info || null;
+    window.__idt_blocked_action = false;
+    window.__idt_blocked_action_info = null;
+    if (!blocked && !info) return null;
+    return Object.assign({ type: 'action_guard_rejected' }, info || {});
   })()`;
 }
 

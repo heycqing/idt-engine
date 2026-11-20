@@ -243,9 +243,12 @@ export function emitSpec(
 
       lines.push(`  const [${stageRespVars.join(', ')}] = await Promise.all([`);
       for (const net of network) {
+        const urlMatch = net.exactUrl === undefined
+          ? `res.url().includes(${JSON.stringify(net.urlPattern)})`
+          : `res.url() === ${JSON.stringify(net.exactUrl)}`;
         lines.push(`    page.waitForResponse((res) =>`);
         lines.push(
-          `      res.url().includes(${JSON.stringify(net.urlPattern)}) && res.request().method() === ${JSON.stringify(net.method)},`
+          `      ${urlMatch} && res.request().method() === ${JSON.stringify(net.method)},`
         );
         lines.push(`      { timeout: ${triggerTimeout} },`);
         lines.push(`    ),`);

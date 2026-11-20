@@ -148,6 +148,8 @@ export function desiredScripts(enginePosix, tsxRuntimePosix = '') {
     idt: `${command} gen`,
     'idt:sync': `${command} sync`,
     'idt:emit': `${command} emit`,
+    'idt:observe': `${command} observe`,
+    'idt:promote': `${command} promote`,
     'idt:heal': `${command} heal`,
     'idt:probe': `${command} probe`,
     'idt:batch': `${command} batch`,
